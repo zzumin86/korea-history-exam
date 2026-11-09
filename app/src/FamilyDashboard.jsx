@@ -7,6 +7,7 @@ import ContentCopyOutlined from '@mui/icons-material/ContentCopyOutlined';
 import IosShareOutlined from '@mui/icons-material/IosShareOutlined';
 import LinkOutlined from '@mui/icons-material/LinkOutlined';
 import AutorenewOutlined from '@mui/icons-material/AutorenewOutlined';
+import DeleteOutlineRounded from '@mui/icons-material/DeleteOutlineRounded';
 import LockOutlined from '@mui/icons-material/LockOutlined';
 import SchoolOutlined from '@mui/icons-material/SchoolOutlined';
 import AddCircleOutline from '@mui/icons-material/AddCircleOutline';
@@ -71,6 +72,8 @@ export default function FamilyDashboard(){
  const [uploading,setUploading]=useState(false);
  const [uploadState,setUploadState]=useState('');
  const [showInactive,setShowInactive]=useState(false);
+ const [memberToDelete,setMemberToDelete]=useState(null);
+ const [deleting,setDeleting]=useState(false);
  const [visibleLink,setVisibleLink]=useState(null);
  const [dialogBusy,setDialogBusy]=useState(false);
  const [quizCount,setQuizCount]=useState(20);
@@ -186,6 +189,22 @@ export default function FamilyDashboard(){
    catch(e){setError('링크 중지 실패: '+e.message);}
    finally{setBusy(false);}
  }
+ async function deleteMember(){
+   if(!memberToDelete||memberToDelete.role==='admin'||deleting)return;
+   const target=memberToDelete;
+   setDeleting(true);setError('');setNotice('');
+   try{
+     const result=await familyApi('delete_member',token,{memberId:target.id});
+     if(!result.deleted)throw Error('member_delete_not_confirmed');
+     await refresh();
+     setMemberToDelete(null);
+     setNotice(target.nickname+'의 가족 카드와 학습기록을 삭제했어요.');
+   }catch(e){
+     setError('가족 삭제 실패: '+e.message);
+   }finally{
+     setDeleting(false);
+   }
+ }
  async function uploadAll(){
    if(!file||uploading)return;
    if(file.size>50*1024*1024){setError('통합 ZIP 크기는 50MB 이하여야 해요.');return;}
@@ -265,7 +284,8 @@ export default function FamilyDashboard(){
        {item.enabled&&<Button variant="outlined" size="small" startIcon={<LinkOutlined/>} disabled={busy||dialogBusy} onClick={()=>showLink(item)}>링크 보기</Button>}
        {!admin&&item.enabled&&<Button variant="outlined" size="small" startIcon={<IosShareOutlined/>} disabled={busy||dialogBusy} onClick={()=>shareMember(item)}>바로 공유</Button>}
        {!admin&&<Button variant="outlined" size="small" startIcon={<AutorenewOutlined/>} disabled={busy} onClick={()=>reissue(item)}>{item.enabled?'재발급':'링크 복구'}</Button>}
-       {!admin&&item.enabled&&<Button color="error" variant="text" size="small" disabled={busy} onClick={()=>stopMember(item)}>중지</Button>}
+       {!admin&&item.enabled&&<Button color="error" variant="text" size="small" disabled={busy||deleting} onClick={()=>stopMember(item)}>중지</Button>}
+       {!admin&&<Button color="error" variant="outlined" size="small" startIcon={<DeleteOutlineRounded/>} disabled={busy||deleting} onClick={()=>setMemberToDelete(item)}>삭제</Button>}
      </Stack>
     </Paper>
    </Grid>;
@@ -392,6 +412,21 @@ export default function FamilyDashboard(){
      </CardPaper></Grid>
    </Grid>}
 
+   <Dialog open={Boolean(memberToDelete)} onClose={()=>{if(!deleting)setMemberToDelete(null);}} maxWidth="xs" fullWidth>
+      <DialogTitle>가족 카드를 영구 삭제할까요?</DialogTitle>
+      <DialogContent>
+        <Typography sx={{fontWeight:800,mb:1}}>{memberToDelete?.nickname}</Typography>
+        <Alert severity="warning">
+          이 가족의 전용 링크와 모든 학습기록이 함께 삭제되고 복구할 수 없습니다.
+          문제은행에 업로드한 기출문제는 삭제되지 않습니다.
+        </Alert>
+      </DialogContent>
+      <DialogActions sx={{px:3,pb:2.5}}>
+        <Button color="inherit" disabled={deleting} onClick={()=>setMemberToDelete(null)}>취소</Button>
+        <Button color="error" variant="contained" disabled={deleting} onClick={deleteMember}
+          startIcon={<DeleteOutlineRounded/>}>{deleting?'삭제 중…':'영구 삭제'}</Button>
+      </DialogActions>
+   </Dialog>
    <Dialog open={Boolean(visibleLink)} onClose={()=>setVisibleLink(null)} fullWidth maxWidth="sm">
       <DialogTitle>{visibleLink?.name} 전용 링크</DialogTitle>
       <DialogContent><Typography fontSize={13} color="text.secondary" sx={{mb:1.6}}>이 링크를 가진 사람은 해당 가족의 학습기록을 열 수 있어요. 필요한 사람에게만 공유하세요.</Typography>
