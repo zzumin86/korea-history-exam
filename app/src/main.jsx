@@ -12,6 +12,8 @@ import ArrowForwardRounded from '@mui/icons-material/ArrowForwardRounded';
 import ArrowBackRounded from '@mui/icons-material/ArrowBackRounded';
 import BookRounded from '@mui/icons-material/BookRounded';
 import {questions} from './questions';
+import LockOutlined from '@mui/icons-material/LockOutlined';
+import FamilyPortal from './FamilyPortal';
 
 const theme=createTheme({
  palette:{primary:{main:'#3158bd',dark:'#193d85'},secondary:{main:'#218476'},background:{default:'#f6f8fc'},text:{primary:'#192b45',secondary:'#687a90'},divider:'#e3e9f2'},
@@ -24,7 +26,8 @@ const pages=[
  {key:'study',name:'바로 확인',icon:<AutoStoriesRounded/>},
  {key:'test',name:'실전시험',icon:<TimerRounded/>},
  {key:'era',name:'시대별',icon:<HistoryEduRounded/>},
- {key:'wrong',name:'오답 복습',icon:<FactCheckRounded/>}
+ {key:'wrong',name:'오답 복습',icon:<FactCheckRounded/>},
+ {key:'family',name:'가족 기출',icon:<LockOutlined/>}
 ];
 const eras=['전체','선사·고조선','고대','고려','조선','근대','일제강점기','현대'];
 const STORAGE='korea-history-demo-v3';
@@ -33,7 +36,7 @@ function saved(){
  catch {return {attempts:0,correct:0,missed:{}};}
 }
 function App(){
- const [page,setPage]=useState('home');
+ const [page,setPage]=useState(()=>window.location.hash.startsWith('#key=')?'family':'home');
  const [filter,setFilter]=useState('전체');
  const [stats,setStats]=useState(saved);
  const [exam,setExam]=useState(null);
@@ -135,6 +138,7 @@ function App(){
   </Box>;
  }
  function view(){
+  if(page==='family')return <FamilyPortal/>;
   if(exam)return quiz();
   if(page==='home')return home();
   if(page==='study')return <Box sx={{maxWidth:770,mx:'auto'}}>{heading('바로 정답 확인','한 문제씩 풀고 즉시 정답과 해설을 확인하는 방식입니다.')}<Card><CardContent sx={{p:3,'&:last-child':{pb:3}}}><Stack direction="row" gap={1} sx={{mb:2}}><Chip label="맛보기 5문항"/><Chip label="즉시 해설" variant="outlined"/></Stack><Typography variant="h6" sx={{mb:1}}>공부 모드</Typography><Typography fontSize={13} color="text.secondary" sx={{mb:3}}>한 문제의 답을 선택하면 바로 정답과 해설이 표시됩니다. 현재는 자체 제작 예시 문제로만 제공돼요.</Typography><Button variant="contained" onClick={()=>start('study')}>공부 시작</Button></CardContent></Card></Box>;
@@ -148,7 +152,7 @@ function App(){
     <Typography fontSize={20} fontWeight={850} letterSpacing="-.05em">한능검 공부방</Typography>
     <Chip size="small" label="BETA" sx={{bgcolor:'#ebf1ff',color:'#3158bd',fontWeight:800,display:{xs:'none',sm:'inline-flex'}}}/>
     <Box flexGrow={1}/><Stack direction="row" gap={.2} sx={{display:{xs:'none',md:'flex'}}}>{pages.map(p=><Button key={p.key} onClick={()=>goto(p.key)} sx={{bgcolor:page===p.key?'#edf3ff':'transparent',color:page===p.key?'#3158bd':'#778599'}}>{p.name}</Button>)}</Stack>
-    <Chip size="small" variant="outlined" label="로그인 준비 중" sx={{display:{xs:'none',sm:'inline-flex'},color:'text.secondary'}}/>
+    <Chip size="small" variant="outlined" label="가족별 전용 링크" sx={{display:{xs:'none',sm:'inline-flex'},color:'text.secondary'}}/>
   </Toolbar></AppBar>
   <Container maxWidth="lg" sx={{py:{xs:2,md:4},pb:{xs:13,md:6}}}>{view()}</Container>
   <Box sx={{textAlign:'center',fontSize:12,color:'#98a5b6',pb:4,display:{xs:'none',md:'block'}}}>한국사능력검정시험 비공식 학습 앱 · 공식 기출 미수록</Box>
