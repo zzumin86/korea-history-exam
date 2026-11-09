@@ -29,12 +29,16 @@ import {familyApi,supabase,KHE_BUCKET} from './kheSupabase';
 const LOCAL_KEY='khe-private-link-v1';
 const DEFAULT_POOL={rounds:[],total:0,questions:[]};
 const WEB_LINK=(token)=>window.location.origin+import.meta.env.BASE_URL+'#key='+token;
+function tokenInAddress(){
+ const match=window.location.hash.match(/^#key=([a-f0-9]{64})$/i);
+ return match?match[1].toLowerCase():null;
+}
 function readLink(){
- const hash=window.location.hash.match(/^#key=([a-f0-9]{64})$/i);
- if(hash){
-   const token=hash[1].toLowerCase();
+ const token=tokenInAddress();
+ if(token){
    localStorage.setItem(LOCAL_KEY,token);
-   window.history.replaceState({},'',window.location.pathname+window.location.search);
+   // Keep the original family link intact so bookmarking and copying the
+   // browser address does not silently lose the access token.
    return token;
  }
  return localStorage.getItem(LOCAL_KEY)||'';
@@ -94,6 +98,27 @@ export default function FamilyDashboard(){
  const [imageBusy,setImageBusy]=useState(false);
  const [zoom,setZoom]=useState(false);
  const isAdmin=identity?.role==='admin';
+
+ useEffect(()=>{
+   const acceptLink=()=>{
+     const fromAddress=tokenInAddress();
+     if(!fromAddress)return;
+     localStorage.setItem(LOCAL_KEY,fromAddress);
+     setToken(old=>{
+       if(old===fromAddress)return old;
+       setQuiz(null);
+       setIdentity(null);
+       setError('');
+       return fromAddress;
+     });
+   };
+   window.addEventListener('hashchange',acceptLink);
+   window.addEventListener('pageshow',acceptLink);
+   return ()=>{
+     window.removeEventListener('hashchange',acceptLink);
+     window.removeEventListener('pageshow',acceptLink);
+   };
+ },[]);
 
  const refresh=useCallback(async(id=identity,credential=token)=>{
    if(!credential)return;
@@ -170,7 +195,11 @@ export default function FamilyDashboard(){
    window.scrollTo(0,0);
  }
  function clearCredential(){
-   localStorage.removeItem(LOCAL_KEY);setToken('');setIdentity(null);setQuiz(null);setActiveTab('home');
+   localStorage.removeItem(LOCAL_KEY);
+   if(tokenInAddress()){
+     window.history.replaceState(null,'',window.location.pathname+window.location.search);
+   }
+   setToken('');setIdentity(null);setQuiz(null);setActiveTab('home');
    setError('');setNotice('');
  }
  async function clipboard(value){
