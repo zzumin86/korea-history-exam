@@ -14,7 +14,9 @@
     "@mui/material": "7.3.11",
     "@mui/icons-material": "7.3.11",
     "@emotion/react": "11.14.0",
-    "@emotion/styled": "11.14.1"
+    "@emotion/styled": "11.14.1",
+    "@supabase/supabase-js": "2.57.0",
+    "fflate": "0.8.2"
   },
   "devDependencies": {
     "vite": "7.3.0",
