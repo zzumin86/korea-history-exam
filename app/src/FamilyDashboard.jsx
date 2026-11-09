@@ -28,6 +28,7 @@ import {familyApi,supabase,KHE_BUCKET} from './kheSupabase';
 
 const LOCAL_KEY='khe-private-link-v1';
 const DEFAULT_POOL={rounds:[],total:0,questions:[]};
+const ERA_ORDER=['선사','고조선·여러 나라','삼국·가야','남북국','고려','조선','개항기·대한제국','일제강점기','현대','시대종합'];
 const WEB_LINK=(token)=>window.location.origin+import.meta.env.BASE_URL+'#key='+token;
 function tokenInAddress(){
  const match=window.location.hash.match(/^#key=([a-f0-9]{64})$/i);
@@ -149,7 +150,7 @@ export default function FamilyDashboard(){
    return ()=>{active=false;};
  },[token]);
 
- const availableEra=useMemo(()=>[...new Set(pool.questions.map(x=>x.era).filter(Boolean))].sort(),[pool.questions]);
+ const availableEra=useMemo(()=>ERA_ORDER.filter(e=>pool.questions.some(q=>q.era===e)),[pool.questions]);
  const activeMembers=members.filter(x=>x.role!=='admin'&&x.enabled);
  const inactiveMembers=members.filter(x=>x.role!=='admin'&&!x.enabled);
  const wrongRows=records.filter(r=>r.is_correct===false && pool.questions.some(q=>q.exam_round===r.exam_round&&q.number===r.question_number));
@@ -579,7 +580,7 @@ export default function FamilyDashboard(){
        <HistoryEduRounded color="primary"/><Typography variant="h6">시대별 집중학습</Typography>
      </Stack>
      <Typography color="text.secondary" fontSize={13} sx={{mb:2}}>
-       여러 회차에 걸쳐 해당 시대에 속하는 문제만 모아 랜덤으로 풀어요. 시대는 검증된 태그만 사용합니다.
+       여러 회차에 걸쳐 해당 시대에 속하는 문제만 모아 랜덤으로 풀어요. 시대는 문항 내용 기준으로 분류합니다. 현재는 1차 검수 분류입니다.
      </Typography>
      {availableEra.length>0?<Stack spacing={1.5}>
        <Select size="small" value={era} onChange={e=>setEra(e.target.value)} sx={{maxWidth:320}}>
