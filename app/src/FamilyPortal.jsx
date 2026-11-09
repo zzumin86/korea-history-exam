@@ -118,13 +118,19 @@ export default function FamilyPortal(){
    if(!available.length){setError('선택한 조건에 해당하는 업로드된 문제가 없습니다.');return;}
    if(m==='round')available=[...available].sort((a,b)=>a.number-b.number);
    else{
-     available=[...available];
-     for(let i=available.length-1;i>0;i--){
-       const a=new Uint32Array(1);crypto.getRandomValues(a);
-       const j=a[0]%(i+1);
-       [available[i],available[j]]=[available[j],available[i]];
-     }
-     available=available.slice(0,Math.min(m==='test'?50:quizCount,available.length));
+     const completed=new Set(records.map(x=>x.exam_round+'-'+String(x.question_number).padStart(2,'0')));
+     const fresh=available.filter(q=>!completed.has(q.id));
+     const solved=available.filter(q=>completed.has(q.id));
+     const shuffle=list=>{
+       list=[...list];
+       for(let i=list.length-1;i>0;i--){
+         const a=new Uint32Array(1);crypto.getRandomValues(a);
+         const j=a[0]%(i+1);
+         [list[i],list[j]]=[list[j],list[i]];
+       }
+       return list;
+     };
+     available=[...shuffle(fresh),...shuffle(solved)].slice(0,Math.min(m==='test'?50:quizCount,available.length));
    }
    setSequence(available);setMode(m==='round'?'test':m);setPos(0);
    setAnswers({});setFeedback({});setError('');
@@ -135,6 +141,8 @@ export default function FamilyPortal(){
    try{
      const data=await familyApi('save_answer',token,{round:current.exam_round,number:current.number,selected:n,mode});
      setAnswers(s=>({...s,[current.id]:n}));
+     setRecords(s=>[{exam_round:current.exam_round,question_number:current.number,answer_selected:n,last_mode:mode,answered_at:new Date().toISOString()},
+       ...s.filter(x=>!(x.exam_round===current.exam_round && x.question_number===current.number))]);
      if(mode!=='test')setFeedback(s=>({...s,[current.id]:data}));
      // updated records remain private to this link owner.
    }catch(err){setError('답안 저장 실패: '+err.message)}
