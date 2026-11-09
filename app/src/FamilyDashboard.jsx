@@ -100,7 +100,8 @@ export default function FamilyDashboard(){
        const id=await familyApi('status',token);
        if(!active)return;
        setIdentity(id);
-       await refresh(id,token);
+       try{await refresh(id,token);}
+       catch(e){if(active)setError('문제은행·가족 명부를 불러오지 못했어요. 다시 열면 재시도할 수 있습니다.');}
      }catch(e){
        if(active){setError('전용 링크를 확인할 수 없습니다. 중지되었거나 변경된 링크일 수 있어요.');setIdentity(null);}
      }finally{if(active)setBooting(false);}
