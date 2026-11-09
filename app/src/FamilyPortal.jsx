@@ -44,6 +44,12 @@ export default function FamilyPortal(){
  const [error,setError]=useState('');
  const [round,setRound]=useState(80);
  const [catalog,setCatalog]=useState(null);
+ const [pool,setPool]=useState({rounds:[],total:0,questions:[]});
+ const [poolBusy,setPoolBusy]=useState(false);
+ const [sequence,setSequence]=useState([]);
+ const [quizCount,setQuizCount]=useState(20);
+ const [era,setEra]=useState('전체');
+ const [showRound,setShowRound]=useState(false);
  const [loading,setLoading]=useState(false);
  const [mode,setMode]=useState(null);
  const [pos,setPos]=useState(0);
@@ -77,33 +83,57 @@ export default function FamilyPortal(){
    catch(err){setError(err.message==='round_not_uploaded'?'이 회차는 아직 준비 중입니다.':err.message);}
    finally{setLoading(false);}
  }
- useEffect(()=>{if(member)selectRound(80);},[member?.memberId]);
+ async function refreshPool(){
+   setPoolBusy(true);
+   try{const result=await familyApi('pool',token);setPool(result);}
+   catch(e){setError('문제은행 조회 실패: '+e.message);}
+   finally{setPoolBusy(false);}
+ }
+ useEffect(()=>{if(member)refreshPool();},[member?.memberId]);
 
  useEffect(()=>{
    if(!member)return;
    familyApi('records',token).then(x=>setRecords(x.records||[])).catch(()=>{});
  },[member?.memberId]);
 
- const current=mode&&catalog?catalog.questions[pos]:null;
+ const current=mode&&sequence.length?sequence[pos]:null;
+ const eras=useMemo(()=>[...new Set(pool.questions.map(q=>q.era).filter(Boolean))].sort(),[pool]);
  useEffect(()=>{
    let active=true;
    setImageUrl('');setImageBusy(Boolean(current));
-   if(current)familyApi('question',token,{round,number:current.number})
+   if(current)familyApi('question',token,{round:current.exam_round,number:current.number})
      .then(data=>{if(active){setImageUrl(data.url);setImageBusy(false)}})
      .catch(err=>{if(active){setImageBusy(false);setError('이미지를 불러오지 못했습니다: '+err.message)}});
    return ()=>{active=false};
- },[token,round,current?.number]);
+ },[token,current?.id]);
 
  function clearLink(){
    localStorage.removeItem(STORAGE);
    setToken('');setMember(null);setMode(null);setCatalog(null);setError('');
  }
- function start(m){setMode(m);setPos(0);setAnswers({});setFeedback({});setError('');}
+ function start(m){
+   let available=m==='round'
+     ?(catalog?.questions||[]).map(q=>({...q,exam_round:round}))
+     :pool.questions.filter(q=>m!=='era'||era==='전체'||q.era===era);
+   if(!available.length){setError('선택한 조건에 해당하는 업로드된 문제가 없습니다.');return;}
+   if(m==='round')available=[...available].sort((a,b)=>a.number-b.number);
+   else{
+     available=[...available];
+     for(let i=available.length-1;i>0;i--){
+       const a=new Uint32Array(1);crypto.getRandomValues(a);
+       const j=a[0]%(i+1);
+       [available[i],available[j]]=[available[j],available[i]];
+     }
+     available=available.slice(0,Math.min(m==='test'?50:quizCount,available.length));
+   }
+   setSequence(available);setMode(m==='round'?'test':m);setPos(0);
+   setAnswers({});setFeedback({});setError('');
+ }
  async function selectAnswer(n){
    if(!current||loading||(mode!=='test' && answers[current.id]))return;
    setLoading(true);setError('');
    try{
-     const data=await familyApi('save_answer',token,{round,number:current.number,selected:n,mode});
+     const data=await familyApi('save_answer',token,{round:current.exam_round,number:current.number,selected:n,mode});
      setAnswers(s=>({...s,[current.id]:n}));
      if(mode!=='test')setFeedback(s=>({...s,[current.id]:data}));
      // updated records remain private to this link owner.
@@ -131,30 +161,42 @@ export default function FamilyPortal(){
  }
  async function uploadZip(){
    if(!sourceZip)return;
-   if(sourceZip.size>35*1024*1024){setError('ZIP은 35MB 이하여야 합니다.');return;}
-   setZipBusy(true);setZipMessage('ZIP 파일 확인 중');setError('');
+   if(sourceZip.size>50*1024*1024){setError('ZIP은 50MB 이하여야 합니다.');return;}
+   setZipBusy(true);setZipMessage('ZIP 파일 검사 중');setError('');
    try{
-     const bytes=new Uint8Array(await sourceZip.arrayBuffer());
-     const entries=unzipSync(bytes);
-     const match=Object.keys(entries).filter(k=>/^round(7[3-9]|80)\/manifest\.json$/.test(k));
-     if(match.length!==1)throw Error('한 회차의 round80/manifest.json 형식이 필요합니다.');
-     const target=Number(match[0].match(/^round(\d+)\//)[1]);
-     const meta=JSON.parse(new TextDecoder().decode(entries[match[0]]));
-     validate(meta,target,entries);
-     const tickets=(await familyApi('upload_tickets',token,{round:target})).tickets;
-     if(tickets.length!==50)throw Error('업로드 권한 50개를 받지 못했습니다.');
-     for(let i=0;i<tickets.length;i++){
-       const t=tickets[i];
-       setZipMessage('이미지 업로드 '+(i+1)+' / 50');
-       const {error:uploadError}=await supabase.storage.from(KHE_BUCKET)
-         .uploadToSignedUrl(t.path,t.token,new Blob([entries[t.path]],{type:'image/webp'}),{contentType:'image/webp'});
-       if(uploadError)throw Error(t.path+': '+uploadError.message);
+     const entries=unzipSync(new Uint8Array(await sourceZip.arrayBuffer()));
+     const names=Object.keys(entries).filter(k=>/^round(7[3-9]|80)\/manifest\.json$/.test(k)).sort();
+     if(!names.length||names.length>8)throw Error('round73~80/manifest.json 항목이 필요합니다.');
+     const packages=names.map(name=>{
+       const r=Number(name.match(/^round(\d+)\//)[1]);
+       const manifest=JSON.parse(new TextDecoder().decode(entries[name]));
+       validate(manifest,r,entries);
+       return {round:r,manifest};
+     });
+     let done=0,total=packages.length*50;
+     for(const pack of packages){
+       setZipMessage(pack.round+'회 업로드 권한 발급 중');
+       const tickets=(await familyApi('upload_tickets',token,{round:pack.round})).tickets;
+       if(tickets.length!==50)throw Error(pack.round+'회 업로드 권한이 부족합니다.');
+       let next=0;
+       const workers=Array.from({length:4},async()=>{
+         while(next<tickets.length){
+           const i=next++;const ticket=tickets[i];
+           const bytes=entries[ticket.path];
+           if(!bytes)throw Error('이미지 누락: '+ticket.path);
+           const {error:uploadError}=await supabase.storage.from(KHE_BUCKET).uploadToSignedUrl(
+             ticket.path,ticket.token,new Blob([bytes],{type:'image/webp'}),{contentType:'image/webp'});
+           if(uploadError)throw Error(ticket.path+': '+uploadError.message);
+           done++;setZipMessage('비공개 업로드 '+done+' / '+total+'문항');
+         }
+       });
+       await Promise.all(workers);
+       await familyApi('publish_manifest',token,{round:pack.round,manifest:pack.manifest});
      }
-     setZipMessage('문항 목록 최종 반영 중');
-     await familyApi('publish_manifest',token,{round:target,manifest:meta});
-     setZipMessage('완료: '+target+'회 50문항 업로드');
-     setSourceZip(null);await selectRound(target);
-   }catch(err){setError('업로드 중단: '+err.message)}
+     setZipMessage('완료: '+packages.length+'개 회차 / '+done+'문항');
+     setSourceZip(null);setCatalog(null);setShowRound(false);
+     await refreshPool();
+   }catch(err){setError('업로드 중단: '+err.message);}
    finally{setZipBusy(false);}
  }
  function copyLink(){if(newLink)navigator.clipboard.writeText(newLink).catch(()=>setError('복사할 수 없어요. 링크를 길게 눌러 복사해 주세요.'))}
@@ -197,44 +239,75 @@ export default function FamilyPortal(){
    <Divider sx={{my:2}}/>
    <Typography variant="h6" sx={{mb:1}}>비공개 문제 ZIP 업로드</Typography>
    <Typography fontSize={12} color="text.secondary" sx={{mb:2}}>원본 이미지는 공개 GitHub에 올라가지 않고 비공개 Supabase Storage에 저장됩니다. 자료 이용 권한은 별도로 확인해야 합니다.</Typography>
-   <Button variant="outlined" component="label" startIcon={<UploadFileRounded/>}>검증 ZIP 선택<input hidden type="file" accept=".zip,application/zip" onChange={e=>setSourceZip(e.target.files?.[0]||null)}/></Button>
+   <Button variant="outlined" component="label" startIcon={<UploadFileRounded/>}>회차별 또는 통합 ZIP 선택<input hidden type="file" accept=".zip,application/zip" onChange={e=>setSourceZip(e.target.files?.[0]||null)}/></Button>
    {sourceZip&&<Typography fontSize={12} sx={{mt:1}}>{sourceZip.name} ({(sourceZip.size/1048576).toFixed(1)} MB)</Typography>}
    <Stack direction="row" gap={1} alignItems="center" sx={{mt:1.4}}><Button variant="contained" disabled={!sourceZip||zipBusy} onClick={uploadZip}>비공개 업로드</Button>{zipBusy&&<CircularProgress size={22}/>}<Typography fontSize={12}>{zipMessage}</Typography></Stack>
   </CardContent></Card>}
-  <Paper variant="outlined" sx={{p:{xs:2,sm:2.5},borderRadius:3}}>
-   <Stack direction={{xs:'column',sm:'row'}} gap={1.4} alignItems={{sm:'center'}} justifyContent="space-between">
-    <Box><Typography fontWeight={800}>심화 기출 회차</Typography><Typography color="text.secondary" fontSize={12}>제73~80회 · 50문항 / 회</Typography></Box>
-    <Select size="small" value={round} onChange={e=>selectRound(Number(e.target.value))} sx={{minWidth:150}}>{ROUNDS.map(r=><MenuItem key={r} value={r}>제{r}회 심화</MenuItem>)}</Select>
-   </Stack>
-  </Paper>
-  {loading&&!catalog&&<Stack alignItems="center" spacing={1} py={5}><CircularProgress/><Typography fontSize={13}>회차 정보를 확인하고 있어요.</Typography></Stack>}
-  {!catalog&&!loading&&<Alert severity="info">선택한 회차의 기출문제는 아직 업로드되지 않았어요. {member.role==='admin'?'위의 가족 관리에서 검증 ZIP을 올릴 수 있습니다.':'관리자가 자료를 준비하고 있어요.'}</Alert>}
-  {catalog&&!mode&&<Card><CardContent sx={{p:3}}>
-    <Stack spacing={1.5}><Typography variant="h6">제{round}회 심화</Typography><Typography color="text.secondary">50문항 · 총 100점 · 실제 기출문제</Typography>
-    <Alert severity="info" sx={{fontSize:12}}>현재 문항 이미지는 원본 확인용이며, 상세 해설과 공식 시험식 최종 채점은 이후 보완합니다.</Alert>
-    <Grid container spacing={1.3}><Grid size={{xs:12,sm:6}}><Button fullWidth variant="contained" onClick={()=>start('study')}>바로 정답 확인하기</Button></Grid>
-    <Grid size={{xs:12,sm:6}}><Button fullWidth variant="outlined" onClick={()=>start('test')}>실전 형식 풀기</Button></Grid></Grid>
-    <Button variant="text" onClick={async()=>{try{const d=await familyApi('records',token);setRecords(d.records||[]);}catch(e){setError(e.message)}}}>내 학습기록 새로고침</Button>
+  {!mode&&<Card><CardContent sx={{p:{xs:2.2,sm:3}}}>
+    <Stack direction={{xs:'column',sm:'row'}} gap={2} alignItems={{sm:'center'}} justifyContent="space-between">
+      <Box>
+        <Typography variant="h6">전체 기출 랜덤 학습</Typography>
+        <Typography color="text.secondary" fontSize={13} sx={{mt:.6}}>업로드된 모든 회차에서 매번 무작위로 문제를 뽑아요. 같은 세트에 중복 문제는 나오지 않습니다.</Typography>
+      </Box>
+      <Chip color="primary" label={pool.total+'문항 · '+pool.rounds.length+'개 회차'}/>
     </Stack>
+    {poolBusy&&<LinearProgress sx={{mt:2}}/>}
+    {pool.total>0?<Stack spacing={2} sx={{mt:2.5}}>
+      <Stack direction={{xs:'column',sm:'row'}} alignItems={{sm:'center'}} gap={1.2}>
+        <Typography fontSize={13} fontWeight={800}>학습 문제 수</Typography>
+        <Select size="small" value={quizCount} onChange={e=>setQuizCount(Number(e.target.value))} sx={{minWidth:125}}>
+          {[10,20,50].map(n=><MenuItem key={n} value={n}>{n}문항</MenuItem>)}
+        </Select>
+        <Typography fontSize={12} color="text.secondary">매번 새로 섞어서 출제</Typography>
+      </Stack>
+      <Grid container spacing={1.2}>
+        <Grid size={{xs:12,sm:6}}><Button fullWidth variant="contained" onClick={()=>start('study')}>전체 혼합 · 바로 정답 확인</Button></Grid>
+        <Grid size={{xs:12,sm:6}}><Button fullWidth variant="outlined" onClick={()=>start('test')}>전체 혼합 · 50문항 시험</Button></Grid>
+      </Grid>
+      <Divider/>
+      <Typography fontWeight={800} fontSize={14}>시대별 집중 학습</Typography>
+      {eras.length?<Stack spacing={1.2}>
+        <Stack direction={{xs:'column',sm:'row'}} gap={1.2}>
+          <Select size="small" value={era} onChange={e=>setEra(e.target.value)} sx={{flex:1}}>
+            <MenuItem value="전체">모든 시대</MenuItem>
+            {eras.map(e=><MenuItem key={e} value={e}>{e}</MenuItem>)}
+          </Select>
+          <Button variant="outlined" onClick={()=>start('era')}>선택한 시대 풀기</Button>
+        </Stack>
+        <Typography color="text.secondary" fontSize={12}>시대 태그가 검증된 문항만 해당 시대에 포함돼요.</Typography>
+      </Stack>:<Alert severity="info" sx={{fontSize:12}}>시대 분류는 검증 전이라 아직 제공하지 않습니다. 전체 혼합·회차별 풀이부터 이용할 수 있어요.</Alert>}
+    </Stack>:<Alert severity="info" sx={{mt:2}}>아직 업로드된 기출문제가 없어요. 관리자가 위의 가족 관리에서 통합 ZIP을 업로드하면 자동으로 문제은행에 추가돼요.</Alert>}
    </CardContent></Card>}
-  {mode&&catalog&&current&&<Grid container spacing={2}>
+   {!mode&&<Paper variant="outlined" sx={{p:2.5,borderRadius:3}}>
+     <Stack direction={{xs:'column',sm:'row'}} gap={1.5} alignItems={{sm:'center'}} justifyContent="space-between">
+       <Box><Typography fontWeight={800}>실제 회차 순서대로 풀기</Typography><Typography color="text.secondary" fontSize={12}>전체 혼합과 별개로, 특정 기출 회차 50문항을 그대로 풀 때만 이용</Typography></Box>
+       <Stack direction="row" gap={1}>
+         <Select size="small" value={round} onChange={e=>setRound(Number(e.target.value))} sx={{minWidth:125}}>{ROUNDS.map(r=><MenuItem key={r} value={r}>제{r}회</MenuItem>)}</Select>
+         <Button variant="outlined" onClick={()=>{setShowRound(true);selectRound(round)}}>불러오기</Button>
+       </Stack>
+     </Stack>
+     {showRound&&loading&&<LinearProgress sx={{mt:2}}/>}
+     {showRound&&catalog&&!loading&&<Button sx={{mt:2}} variant="contained" onClick={()=>start('round')}>제{round}회 실전 50문항 시작</Button>}
+     {showRound&&!catalog&&!loading&&<Typography sx={{mt:1.5}} fontSize={12} color="text.secondary">이 회차는 아직 업로드되지 않았어요.</Typography>}
+   </Paper>}
+  {mode&&sequence.length>0&&current&&<Grid container spacing={2}>
     <Grid size={{xs:12,md:8}}><Card><CardContent sx={{p:{xs:2,sm:3}}}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}><Typography fontWeight={850}>제{round}회 {current.number}번</Typography><Chip size="small" label={current.points+'점'}/></Stack>
-      <LinearProgress variant="determinate" value={(pos+1)/catalog.questions.length*100} sx={{height:6,borderRadius:4,my:2.2}}/>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}><Typography fontWeight={850}>제{current.exam_round}회 {current.number}번</Typography><Chip size="small" label={current.points+'점'}/></Stack>
+      <LinearProgress variant="determinate" value={(pos+1)/sequence.length*100} sx={{height:6,borderRadius:4,my:2.2}}/>
       {imageBusy?<Box sx={{height:280,display:'grid',placeItems:'center'}}><CircularProgress/></Box>:imageUrl?
-        <Box sx={{textAlign:'center',mb:2}}><Box component="img" onClick={()=>setZoom(true)} src={imageUrl} alt={round+'회 '+current.number+'번 기출문제 원본'} sx={{width:'100%',height:'auto',maxWidth:740,border:'1px solid #e1e6ef',borderRadius:2,cursor:'zoom-in'}}/><Button size="small" onClick={()=>setZoom(true)} startIcon={<ZoomInRounded/>}>확대 보기</Button></Box>:<Alert severity="warning">이미지 로드 실패</Alert>}
+        <Box sx={{textAlign:'center',mb:2}}><Box component="img" onClick={()=>setZoom(true)} src={imageUrl} alt={current.exam_round+'회 '+current.number+'번 기출문제 원본'} sx={{width:'100%',height:'auto',maxWidth:740,border:'1px solid #e1e6ef',borderRadius:2,cursor:'zoom-in'}}/><Button size="small" onClick={()=>setZoom(true)} startIcon={<ZoomInRounded/>}>확대 보기</Button></Box>:<Alert severity="warning">이미지 로드 실패</Alert>}
       <Typography fontWeight={800} fontSize={13} sx={{mb:1.4}}>답 선택</Typography>
       <Box sx={{display:'grid',gridTemplateColumns:'repeat(5,minmax(0,1fr))',gap:{xs:.7,sm:1.3}}}>{[1,2,3,4,5].map(n=><Button key={n} disabled={loading||(mode!=='test'&&Boolean(active))} variant={answers[current.id]===n?'contained':'outlined'} onClick={()=>selectAnswer(n)} sx={{minWidth:0,minHeight:50,fontWeight:800,fontSize:18}}>{['①','②','③','④','⑤'][n-1]}</Button>)}</Box>
       {mode!=='test'&&feedback[current.id]&&<Alert severity={feedback[current.id].correct?'success':'error'} sx={{mt:2}}>{feedback[current.id].correct?'정답입니다!':'오답입니다.'} 정답은 {['①','②','③','④','⑤'][feedback[current.id].correctAnswer-1]}번입니다.</Alert>}
       <Stack direction="row" justifyContent="space-between" mt={3} gap={1}>
        <Button variant="outlined" disabled={pos===0} onClick={()=>setPos(p=>Math.max(0,p-1))} startIcon={<ArrowBackRounded/>}>이전</Button>
-       {pos===49?<Button variant="contained" onClick={()=>setMode(null)}>회차로 돌아가기</Button>:
-       <Button variant="contained" disabled={!answers[current.id]} onClick={()=>setPos(p=>Math.min(49,p+1))} endIcon={<ArrowForwardRounded/>}>다음</Button>}
+       {pos===sequence.length-1?<Button variant="contained" onClick={()=>setMode(null)}>학습 마치기</Button>:
+       <Button variant="contained" disabled={!answers[current.id]} onClick={()=>setPos(p=>Math.min(sequence.length-1,p+1))} endIcon={<ArrowForwardRounded/>}>다음</Button>}
       </Stack>
     </CardContent></Card></Grid>
     <Grid size={{xs:12,md:4}}><Card sx={{position:{md:'sticky'},top:{md:90}}}><CardContent>
-      <Typography variant="h6">답안 현황</Typography><Typography fontSize={12} color="text.secondary" sx={{my:1}}>{Object.keys(answers).length} / 50문항 선택</Typography>
-      <Box sx={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:.5,mt:2}}>{catalog.questions.map((q,i)=><Button key={q.id} onClick={()=>setPos(i)} variant={pos===i?'contained':'outlined'} sx={{minWidth:0,p:0,px:0}}>{i+1}</Button>)}</Box>
+      <Typography variant="h6">답안 현황</Typography><Typography fontSize={12} color="text.secondary" sx={{my:1}}>{Object.keys(answers).length} / {sequence.length}문항 선택</Typography>
+      <Box sx={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:.5,mt:2}}>{sequence.map((q,i)=><Button key={q.id} onClick={()=>setPos(i)} variant={pos===i?'contained':'outlined'} sx={{minWidth:0,p:0,px:0}}>{i+1}</Button>)}</Box>
       <Typography fontSize={12} color="text.secondary" sx={{mt:2}}>선택한 답은 이 가족 링크 계정에 저장됩니다. 실전 모드 정답은 문제를 푸는 동안 표시되지 않습니다.</Typography>
     </CardContent></Card></Grid>
   </Grid>}
