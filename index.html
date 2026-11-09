@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#12315b">
+  <meta name="description" content="한국사능력검정시험 기출 학습 웹앱. 회차별 풀이와 오답 복습을 준비하고 있습니다.">
+  <title>한능검 공부방 | 한국사능력검정시험</title>
+  <style>
+    :root { color-scheme:light; --navy:#12315b; --navy2:#1f4676; --blue:#315ee9; --ink:#17253b; --muted:#66758b; --line:#dce3ee; --bg:#f5f7fb; --card:#fff; --green:#19836a; --soft:#eef4ff; --shadow:0 12px 35px rgba(25,47,86,.065); }
+    *{box-sizing:border-box}
+    html{scroll-behavior:smooth}
+    body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Noto Sans KR","Malgun Gothic",sans-serif;line-height:1.55}
+    button{font:inherit;cursor:pointer}
+    button:focus-visible,a:focus-visible{outline:3px solid #79a1ff;outline-offset:3px}
+    button:disabled{opacity:.45;cursor:not-allowed}
+    .shell{max-width:1160px;margin:auto;padding:0 25px}
+    .header{background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
+    .header-in{height:72px;display:flex;align-items:center;justify-content:space-between;gap:20px}
+    .logo{display:flex;gap:11px;align-items:center;text-decoration:none;color:var(--navy);font-size:20px;font-weight:850;letter-spacing:-.05em}
+    .logo-mark{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:var(--navy);color:#fff;font-weight:850;font-size:17px;letter-spacing:-.04em}
+    .header nav{display:flex;gap:7px}
+    .nav-item{border:0;border-radius:10px;padding:10px 16px;color:#61718a;background:transparent;font-weight:700}
+    .nav-item.active{background:#ecf1ff;color:#214bc7}
+    .header-sub{font-size:12px;color:#8792a3}
+    main{padding-top:36px;padding-bottom:85px}
+    .eyebrow{font-weight:800;font-size:12px;letter-spacing:.14em;color:#9bc0ff}
+    .hero{background:linear-gradient(118deg,#12315b 5%,#254f84 70%,#3367a2);border-radius:24px;min-height:294px;padding:42px 46px;color:white;box-shadow:var(--shadow);position:relative;overflow:hidden}
+    .hero:after{content:"";position:absolute;border:1px solid #ffffff21;width:360px;height:360px;border-radius:50%;right:-75px;top:-135px;box-shadow:0 0 0 52px #ffffff08,0 0 0 110px #ffffff05;pointer-events:none}
+    .hero h1{margin:14px 0 12px;font-size:clamp(27px,3.3vw,42px);letter-spacing:-.055em;line-height:1.23;max-width:650px}
+    .hero p{margin:0;color:#d6e4f7;font-size:15px;max-width:560px;line-height:1.75}
+    .hero-actions{display:flex;gap:10px;margin-top:27px;flex-wrap:wrap}
+    .primary{border:0;border-radius:12px;background:#fff;color:#153966;font-weight:800;padding:13px 19px}
+    .secondary{border:1px solid #a8bfde80;border-radius:12px;background:#ffffff13;color:#fff;font-weight:700;padding:12px 19px}
+    .pill{display:inline-flex;align-items:center;gap:6px;background:#d5ecff20;border:1px solid #a3cdf65c;color:#dbefff;border-radius:20px;padding:5px 10px;font-size:12px;font-weight:750;margin-left:8px}
+    .section-heading{display:flex;align-items:end;justify-content:space-between;margin:33px 0 15px;gap:10px}
+    h2{margin:0;font-size:22px;letter-spacing:-.04em}
+    .hint{color:var(--muted);font-size:13px}
+    .tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}
+    .tile,.panel,.question-card{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow)}
+    .tile{padding:23px;min-width:0}
+    .tile-icon{width:42px;height:42px;display:grid;place-items:center;background:#edf2ff;border-radius:13px;color:#315cce;font-size:22px;margin-bottom:19px}
+    .tile h3{margin:0 0 6px;font-size:18px;letter-spacing:-.025em}
+    .tile p{margin:0 0 18px;min-height:44px;color:var(--muted);font-size:13px;line-height:1.6}
+    .tile button{background:var(--soft);color:#2853c2;border:0;padding:10px 13px;border-radius:9px;font-weight:800;font-size:13px}
+    .tile button[disabled]{opacity:1;background:#f1f3f6;color:#98a1ad}
+    .tile .tag{color:#8693a4;font-size:12px;font-weight:750;margin-left:9px}
+    .lower{display:grid;grid-template-columns:1.3fr 1fr;gap:15px;margin-top:16px}
+    .panel{padding:22px}
+    .panel h3{font-size:17px;margin:0 0 9px;letter-spacing:-.03em}
+    .panel p{color:var(--muted);font-size:13px;margin:0}
+    .stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:18px 0 0}
+    .stat{padding:15px 12px;background:#f5f8ff;border-radius:12px;text-align:center}
+    .stat strong{display:block;font-size:27px;color:var(--navy);font-variant-numeric:tabular-nums}
+    .stat small{color:var(--muted);font-size:12px}
+    .note{background:#fffbec;border:1px solid #faeec7;color:#816728;border-radius:12px;font-size:12px;padding:13px 15px;line-height:1.65;margin-top:15px}
+    .panel ul{margin:12px 0 0;padding-left:20px;color:#4b5d75;font-size:13px;line-height:2}
+    .screen{display:none}
+    .screen.active{display:block}
+    .screen-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:19px;gap:12px}
+    .back{color:#47607f;border:1px solid var(--line);border-radius:10px;padding:9px 13px;background:#fff;font-weight:700}
+    .practice{max-width:800px;margin:0 auto}
+    .progress-line{height:7px;background:#e4eaf5;border-radius:10px;overflow:hidden;margin:16px 0 20px}
+    .progress-line span{display:block;height:100%;width:0;background:var(--blue);transition:width .2s}
+    .question-card{padding:31px}
+    .question-meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+    .chip{font-size:12px;font-weight:800;color:#3157af;background:#edf3ff;border-radius:7px;padding:5px 9px}
+    .question-card h2{font-size:23px;line-height:1.5;margin-bottom:21px}
+    .context{padding:16px;border:1px solid #dfe8f6;background:#f8faff;border-radius:12px;margin-bottom:20px;font-size:14px;white-space:pre-line}
+    .choices{display:grid;gap:10px}
+    .choice{width:100%;text-align:left;padding:15px 16px;display:flex;align-items:center;gap:13px;background:#fff;border:1px solid #dbe3ef;border-radius:11px;color:#34445a}
+    .choice .number{width:27px;height:27px;flex:0 0 27px;background:#f0f3f8;border-radius:50%;display:grid;place-items:center;color:#6b7790;font-size:13px;font-weight:750}
+    .choice.selected{border-color:#3764df;background:#eef3ff;color:#143eae;font-weight:750}
+    .choice.selected .number{background:#3764df;color:white}
+    .question-actions{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:21px}
+    .solid{color:#fff;background:var(--blue);border:0;border-radius:10px;padding:12px 18px;font-weight:800}
+    .outline{border:1px solid #cfd9e9;background:white;border-radius:10px;padding:11px 17px;color:#415678;font-weight:800}
+    .result{border-radius:17px;background:white;border:1px solid var(--line);padding:30px;text-align:center}
+    .result strong{display:block;font-size:43px;color:var(--navy);margin:4px 0}
+    .result p{color:var(--muted)}
+    .review{margin:20px 0;text-align:left;display:grid;gap:12px}
+    .review-item{padding:14px;border-radius:12px;background:#f6f8fc;font-size:14px}
+    .review-item b{display:block;margin-bottom:5px}
+    .review-item.good{border-left:4px solid #2d9b80}.review-item.bad{border-left:4px solid #e5746b}
+    .empty{padding:40px 22px;text-align:center;color:var(--muted);background:#fff;border:1px dashed #cad5e4;border-radius:18px}
+    .empty .big{font-size:32px;margin-bottom:10px}
+    .footer{font-size:12px;color:#909cad;text-align:center;padding:22px 0 35px}
+    .mobile-nav{display:none}
+    @media(max-width:760px){
+      .shell{padding:0 16px}.header-in{height:60px}.logo{font-size:18px}.header nav,.header-sub{display:none}
+      main{padding-top:18px;padding-bottom:110px}
+      .hero{padding:28px 24px;min-height:290px;border-radius:19px}
+      .hero h1{font-size:29px;margin:14px 0}.hero p{font-size:13px}
+      .hero-actions{margin-top:23px}
+      .tiles{grid-template-columns:1fr;gap:11px}
+      .tile{padding:19px;display:grid;grid-template-columns:46px 1fr;column-gap:13px}
+      .tile-icon{grid-row:span 3;margin:0}
+      .tile h3{font-size:16px}.tile p{min-height:0;margin-bottom:12px}
+      .lower{grid-template-columns:1fr;gap:11px}
+      .section-heading{margin-top:27px}.question-card{padding:21px 17px}
+      .question-card h2{font-size:19px}
+      .mobile-nav{display:grid;grid-template-columns:repeat(3,1fr);position:fixed;bottom:0;left:0;right:0;padding:8px 9px calc(8px + env(safe-area-inset-bottom));background:#fff;border-top:1px solid var(--line);z-index:15}
+      .mobile-nav .nav-item{display:flex;flex-direction:column;gap:1px;align-items:center;font-size:12px;padding:7px 3px}
+      .mobile-nav .nav-item span{font-size:19px}
+    }
+    @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}
+  </style>
+</head>
+<body>
+<header class="header">
+  <div class="shell header-in">
+    <a class="logo" href="#home" id="logo"><span class="logo-mark">史</span>한능검 공부방</a>
+    <nav aria-label="주 메뉴">
+      <button class="nav-item active" data-screen="home">홈</button>
+      <button class="nav-item" data-screen="practice">연습문제</button>
+      <button class="nav-item" data-screen="review">오답 복습</button>
+    </nav>
+    <span class="header-sub">한국사능력검정시험 · 첫 번째 시제품</span>
+  </div>
+</header>
+<main class="shell">
+  <section id="home" class="screen active" aria-labelledby="heroTitle">
+    <div class="hero">
+      <div class="eyebrow">KOREAN HISTORY EXAM</div>
+      <h1 id="heroTitle">하루 조금씩,<br>한국사 실력을 쌓아보세요.</h1>
+      <p>실제 기출문제는 출처와 정답을 검증한 뒤 추가합니다. 지금은 화면과 풀이 기능을 확인할 수 있는 연습용 시제품이에요.</p>
+      <div class="hero-actions">
+        <button class="primary" id="heroStart">연습문제 풀어보기 →</button>
+        <button class="secondary" id="heroReview">내 오답 확인하기</button>
+      </div>
+    </div>
+    <div class="section-heading"><h2>학습 시작하기</h2><span class="hint">기출문제는 준비 중</span></div>
+    <div class="tiles">
+      <article class="tile">
+        <div class="tile-icon" aria-hidden="true">✍</div>
+        <h3>맛보기 문제</h3>
+        <p>앱 동작을 체험하는 예시 5문항. 실제 기출문제는 아니에요.</p>
+        <div><button id="cardStart">문제 풀기 →</button><span class="tag">체험 가능</span></div>
+      </article>
+      <article class="tile">
+        <div class="tile-icon" aria-hidden="true">📚</div>
+        <h3>심화 기출 (1~3급)</h3>
+        <p>회차별 50문항 · 5지선다 · 80분 실전 풀이 예정</p>
+        <div><button disabled>자료 준비 중</button></div>
+      </article>
+      <article class="tile">
+        <div class="tile-icon" aria-hidden="true">📖</div>
+        <h3>기본 기출 (4~6급)</h3>
+        <p>회차별 50문항 · 4지선다 · 70분 실전 풀이 예정</p>
+        <div><button disabled>자료 준비 중</button></div>
+      </article>
+    </div>
+    <div class="lower">
+      <section class="panel">
+        <h3>나의 학습 기록</h3>
+        <p>현재 기기 브라우저에만 저장됩니다. 기기 간 동기화는 추후 연결 예정입니다.</p>
+        <div class="stat-grid">
+          <div class="stat"><strong id="attempts">0</strong><small>완료한 연습</small></div>
+          <div class="stat"><strong id="correct">0</strong><small>맞힌 문제 누계</small></div>
+          <div class="stat"><strong id="wrong">0</strong><small>오답 문항 수</small></div>
+        </div>
+      </section>
+      <section class="panel">
+        <h3>앞으로 추가할 기능</h3>
+        <p>공식 자료 검증을 거쳐 순차적으로 연결합니다.</p>
+        <ul><li>회차별·시대별 기출문제 탐색</li><li>시험 타이머·OMR·자동 채점</li><li>사료·유물·지도 이미지</li><li>Supabase 로그인과 학습 기록 동기화</li></ul>
+        <div class="note">주의: 지금의 예시 문항과 채점 결과는 한국사능력검정시험의 공식 기출·실전 성적을 의미하지 않습니다.</div>
+      </section>
+    </div>
+  </section>
+  <section id="practice" class="screen practice" aria-labelledby="practiceTitle">
+    <div class="screen-title">
+      <div><span class="hint">미리보기 · 실제 기출 아님</span><h2 id="practiceTitle">맛보기 문제 풀이</h2></div>
+      <button class="back" data-screen="home">← 홈으로</button>
+    </div>
+    <div id="quizBody"></div>
+  </section>
+  <section id="review" class="screen" aria-labelledby="reviewTitle">
+    <div class="screen-title"><div><span class="hint">이 브라우저에 저장된 기록</span><h2 id="reviewTitle">오답 복습</h2></div><button class="back" data-screen="home">← 홈으로</button></div>
+    <div id="reviewBody"></div>
+  </section>
+</main>
+<footer class="footer shell">한능검 공부방 · 개인 학습용 시제품 · 공식 기출문제 미수록</footer>
+<nav class="mobile-nav" aria-label="모바일 메뉴">
+  <button class="nav-item active" data-screen="home"><span aria-hidden="true">⌂</span>홈</button>
+  <button class="nav-item" data-screen="practice"><span aria-hidden="true">✎</span>문제풀이</button>
+  <button class="nav-item" data-screen="review"><span aria-hidden="true">▤</span>오답복습</button>
+</nav>
+<script>
+(function(){
+"use strict";
+var KEY="kh-exam-demo-v1";
+var examples=[
+  {q:"신석기 시대의 생활 모습으로 옳은 것은?",passage:"한반도의 선사 시대를 공부하고 있습니다.",choices:["철제 농기구를 널리 사용하였다.","빗살무늬 토기를 만들어 사용하였다.","과거제를 통해 관리를 선발하였다.","거북선을 제작하여 활용하였다.","석굴암을 건립하였다."],answer:1,explain:"신석기 시대에는 빗살무늬 토기를 사용하고 농경과 목축이 시작되었습니다."},
+  {q:"훈민정음을 창제한 왕은 누구인가?",passage:"훈민정음은 1443년에 창제되었고 1446년에 반포되었습니다.",choices:["태조","태종","세종","성종","영조"],answer:2,explain:"세종은 1443년 훈민정음을 창제하고 1446년 반포하였습니다."},
+  {q:"고려를 건국한 인물은?",passage:"후삼국의 혼란을 수습하고 918년에 새로운 왕조를 세웠습니다.",choices:["왕건","견훤","궁예","이성계","김유신"],answer:0,explain:"왕건은 918년에 고려를 건국하고 936년에 후삼국을 통일하였습니다."},
+  {q:"3·1 운동이 일어난 해는?",passage:"독립선언서를 바탕으로 전국 각지에서 만세 시위가 전개되었습니다.",choices:["1894년","1905년","1910년","1919년","1945년"],answer:3,explain:"3·1 운동은 1919년에 일어난 전국적인 독립 만세 운동입니다."},
+  {q:"삼국을 통일하는 과정에서 나당 연합을 맺은 나라는?",passage:"7세기 삼국 간의 전쟁과 대외 관계를 떠올려 보세요.",choices:["고구려","백제","신라","가야","발해"],answer:2,explain:"신라는 당과 연합해 백제와 고구려를 멸망시킨 뒤 나당 전쟁을 거쳐 통일을 이루었습니다."}
+];
+var records={attempts:0,correct:0,missed:{}};
+try{var stored=JSON.parse(localStorage.getItem(KEY));if(stored&&typeof stored==="object"){records.attempts=Number(stored.attempts)||0;records.correct=Number(stored.correct)||0;records.missed=stored.missed&&typeof stored.missed==="object"?stored.missed:{};}}catch(e){}
+var index=0,selected=[],finished=false;
+function save(){try{localStorage.setItem(KEY,JSON.stringify(records));}catch(e){}}
+function node(tag,cls,text){var e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e}
+function navigate(where){
+  document.querySelectorAll(".screen").forEach(function(el){el.classList.toggle("active",el.id===where)});
+  document.querySelectorAll("[data-screen]").forEach(function(el){el.classList.toggle("active",el.dataset.screen===where)});
+  if(where==="practice")renderQuiz();
+  if(where==="review")renderReview();
+  if(where==="home")refreshStats();
+  window.scrollTo({top:0,behavior:"instant"});
+}
+function start(){index=0;selected=[];finished=false;navigate("practice")}
+function refreshStats(){
+  document.getElementById("attempts").textContent=records.attempts;
+  document.getElementById("correct").textContent=records.correct;
+  document.getElementById("wrong").textContent=Object.keys(records.missed).length;
+}
+function btn(text,cls,callback,disabled){var b=node("button",cls,text);b.type="button";b.disabled=!!disabled;b.addEventListener("click",callback);return b}
+function renderQuiz(){
+  var root=document.getElementById("quizBody");root.replaceChildren();
+  if(finished){
+    var score=selected.reduce(function(n,a,i){return n+(a===examples[i].answer?1:0)},0);
+    var result=node("div","result");
+    result.appendChild(node("div","hint","체험 문제 풀이 완료"));
+    result.appendChild(node("strong",null,score+" / "+examples.length));
+    result.appendChild(node("p",null,"실제 한능검 성적과 무관한 예시 채점 결과입니다."));
+    var review=node("div","review");
+    examples.forEach(function(q,i){
+      var good=selected[i]===q.answer;
+      var item=node("div","review-item "+(good?"good":"bad"));
+      item.appendChild(node("b",null,(i+1)+". "+q.q+" · "+(good?"정답":"오답")));
+      item.appendChild(node("div",null,"정답: "+q.choices[q.answer]));
+      item.appendChild(node("div",null,q.explain));
+      review.appendChild(item);
+    });
+    result.appendChild(review);
+    result.appendChild(btn("다시 풀기","solid",start,false));
+    root.appendChild(result);
+    return;
+  }
+  var q=examples[index];
+  var counter=node("div","hint","문제 "+(index+1)+" / "+examples.length);
+  var progress=node("div","progress-line");var fill=node("span");fill.style.width=((index+1)/examples.length*100)+"%";progress.appendChild(fill);
+  var card=node("article","question-card");
+  var meta=node("div","question-meta");
+  meta.appendChild(node("span","chip","연습용 예시"));
+  meta.appendChild(node("span","chip","5지선다"));
+  card.appendChild(meta);
+  card.appendChild(node("h2",null,q.q));
+  card.appendChild(node("div","context",q.passage));
+  var choices=node("div","choices");
+  q.choices.forEach(function(c,i){
+    var b=node("button","choice"+(selected[index]===i?" selected":""));
+    b.type="button";b.setAttribute("aria-pressed",selected[index]===i?"true":"false");
+    b.appendChild(node("span","number",String(i+1)));
+    b.appendChild(node("span",null,c));
+    b.addEventListener("click",function(){selected[index]=i;renderQuiz()});
+    choices.appendChild(b);
+  });
+  card.appendChild(choices);
+  var actions=node("div","question-actions");
+  actions.appendChild(btn("이전 문제","outline",function(){index=Math.max(0,index-1);renderQuiz()},index===0));
+  actions.appendChild(btn(index===examples.length-1?"채점하기":"다음 문제 →","solid",function(){
+    if(index<examples.length-1){index++;renderQuiz();return}
+    var score=0;
+    examples.forEach(function(x,i){if(selected[i]===x.answer){score++;delete records.missed[String(i)]}else{records.missed[String(i)]=true}});
+    records.attempts++;records.correct+=score;save();finished=true;renderQuiz();refreshStats();
+  },selected[index]===undefined));
+  card.appendChild(actions);root.appendChild(counter);root.appendChild(progress);root.appendChild(card);
+}
+function renderReview(){
+  var root=document.getElementById("reviewBody");root.replaceChildren();
+  var keys=Object.keys(records.missed).filter(function(k){return examples[Number(k)]});
+  if(!keys.length){var empty=node("div","empty");empty.appendChild(node("div","big","◎"));empty.appendChild(node("h2",null,"저장된 오답이 없어요"));empty.appendChild(node("p",null,"맛보기 문제를 풀면 틀린 문제가 여기에 표시됩니다."));empty.appendChild(btn("문제 풀러 가기","solid",start,false));root.appendChild(empty);return;}
+  var panel=node("div","panel");panel.appendChild(node("p",null,"맛보기 문제 "+keys.length+"개 · 이 기기의 브라우저에만 저장됩니다."));
+  var list=node("div","review");
+  keys.forEach(function(k){
+    var q=examples[Number(k)],item=node("div","review-item bad");
+    item.appendChild(node("b",null,q.q));
+    item.appendChild(node("div",null,"정답: "+q.choices[q.answer]));
+    item.appendChild(node("div",null,q.explain));
+    list.appendChild(item);
+  });
+  panel.appendChild(list);panel.appendChild(btn("전체 다시 풀기","solid",start,false));root.appendChild(panel);
+}
+document.querySelectorAll("[data-screen]").forEach(function(b){b.addEventListener("click",function(){navigate(b.dataset.screen)})});
+document.getElementById("heroStart").addEventListener("click",start);
+document.getElementById("cardStart").addEventListener("click",start);
+document.getElementById("heroReview").addEventListener("click",function(){navigate("review")});
+document.getElementById("logo").addEventListener("click",function(e){e.preventDefault();navigate("home")});
+refreshStats();
+})();
+</script>
+</body>
+</html>
