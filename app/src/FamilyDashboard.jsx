@@ -79,6 +79,9 @@ export default function FamilyDashboard(){
  const [quizCount,setQuizCount]=useState(20);
  const [era,setEra]=useState('전체');
  const [quiz,setQuiz]=useState(null);
+ const [reviewOpen,setReviewOpen]=useState(false);
+ const [grading,setGrading]=useState(false);
+ const [clock,setClock]=useState(Date.now());
  const [image,setImage]=useState('');
  const [imageBusy,setImageBusy]=useState(false);
  const [zoom,setZoom]=useState(false);
@@ -115,8 +118,23 @@ export default function FamilyDashboard(){
  const availableEra=useMemo(()=>[...new Set(pool.questions.map(x=>x.era).filter(Boolean))].sort(),[pool.questions]);
  const activeMembers=members.filter(x=>x.role!=='admin'&&x.enabled);
  const inactiveMembers=members.filter(x=>x.role!=='admin'&&!x.enabled);
+ const wrongRows=records.filter(r=>r.is_correct===false && pool.questions.some(q=>q.exam_round===r.exam_round&&q.number===r.question_number));
+ const remaining=quiz?.kind==='test'&&!quiz.finished
+   ?Math.max(0,80*60-Math.floor((clock-quiz.startedAt)/1000)):0;
+ const formatTimer=(s)=>String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+ useEffect(()=>{
+   if(quiz?.kind!=='test'||quiz.finished)return;
+   setClock(Date.now());
+   const id=setInterval(()=>setClock(Date.now()),1000);
+   return ()=>clearInterval(id);
+ },[quiz?.kind,quiz?.startedAt,quiz?.finished]);
+ useEffect(()=>{
+   if(quiz?.kind==='test'&&!quiz.finished&&!grading&&remaining===0){
+     void finishTest(true);
+   }
+ },[remaining,quiz?.kind,quiz?.finished,grading]);
 
- const current=quiz?.questions?.[quiz.index];
+ const current=quiz?.finished?null:quiz?.questions?.[quiz.index];
  useEffect(()=>{
    if(!current){setImage('');setImageBusy(false);return;}
    let active=true;setImage('');setImageBusy(true);
@@ -249,26 +267,69 @@ export default function FamilyDashboard(){
    finally{setUploading(false);}
  }
  function startQuiz(kind){
-   const candidates=pool.questions.filter(q=>kind!=='era'||era==='전체'||q.era===era);
-   if(!candidates.length){setError('선택한 범위에서 사용 가능한 문제가 없습니다.');return;}
-   const seen=new Set(records.map(r=>r.exam_round+'-'+String(r.question_number).padStart(2,'0')));
-   const fresh=shuffled(candidates.filter(q=>!seen.has(q.id)));
-   const old=shuffled(candidates.filter(q=>seen.has(q.id)));
-   const selected=[...fresh,...old].slice(0,Math.min(kind==='test'?50:quizCount,candidates.length));
-   setQuiz({kind,questions:selected,index:0,answers:{},feedback:{}});
-   setError('');window.scrollTo(0,0);
+   const wrongKeys=new Set(wrongRows.map(r=>r.exam_round+'-'+String(r.question_number).padStart(2,'0')));
+   const candidates=pool.questions.filter(q=>kind==='wrong'?wrongKeys.has(q.id):
+     kind==='era'?(era==='전체'||q.era===era):true);
+   if(kind==='test'&&candidates.length<50){setError('실전시험을 보려면 50문항 이상 등록되어야 합니다.');return;}
+   if(!candidates.length){setError(kind==='wrong'?'복습할 오답이 없습니다.':'선택한 조건에 사용 가능한 문제가 없습니다.');return;}
+   const done=new Set(records.map(r=>r.exam_round+'-'+String(r.question_number).padStart(2,'0')));
+   const fresh=shuffled(candidates.filter(q=>!done.has(q.id)));
+   const reviewed=shuffled(candidates.filter(q=>done.has(q.id)));
+   const picked=kind==='wrong'?shuffled(candidates):[...fresh,...reviewed];
+   const selected=picked.slice(0,Math.min(kind==='test'?50:quizCount,picked.length));
+   setReviewOpen(false);
+   setGrading(false);
+   setQuiz({kind,questions:selected,index:0,answers:{},feedback:{},finished:false,
+     startedAt:Date.now(),result:null});
+   setClock(Date.now());setError('');window.scrollTo(0,0);
  }
  async function pickAnswer(n){
-   if(!current||busy||((quiz.kind!=='test')&&quiz.answers[current.id]))return;
+   if(!current||busy||grading||quiz.finished)return;
+   if(quiz.kind==='test'){
+     setQuiz(prev=>({...prev,answers:{...prev.answers,[current.id]:n}}));
+     return;
+   }
+   if(quiz.answers[current.id])return;
    setBusy(true);setError('');
    try{
-     const result=await familyApi('save_answer',token,{round:current.exam_round,number:current.number,selected:n,mode:quiz.kind});
-     setQuiz(s=>({...s,answers:{...s.answers,[current.id]:n},
-       feedback:quiz.kind==='test'?s.feedback:{...s.feedback,[current.id]:result}}));
-     setRecords(prev=>[{exam_round:current.exam_round,question_number:current.number,answer_selected:n,is_correct:result.correct??null},
-       ...prev.filter(r=>!(r.exam_round===current.exam_round&&r.question_number===current.number))]);
+     const mode=quiz.kind==='wrong'?'study':quiz.kind;
+     const result=await familyApi('save_answer',token,{
+       round:current.exam_round,number:current.number,selected:n,mode
+     });
+     setQuiz(prev=>({...prev,answers:{...prev.answers,[current.id]:n},
+       feedback:{...prev.feedback,[current.id]:result}}));
+     setRecords(prev=>[
+       {exam_round:current.exam_round,question_number:current.number,
+        answer_selected:n,is_correct:result.correct,last_mode:mode,answered_at:new Date().toISOString()},
+       ...prev.filter(r=>!(r.exam_round===current.exam_round&&r.question_number===current.number))
+     ]);
    }catch(e){setError('답안 저장 오류: '+e.message);}
    finally{setBusy(false);}
+ }
+ async function finishTest(automatic=false){
+   if(!quiz||quiz.kind!=='test'||quiz.finished||grading)return;
+   const missing=quiz.questions.filter(q=>!quiz.answers[q.id]).length;
+   if(!automatic&&missing>0&&!window.confirm('아직 '+missing+'문항을 선택하지 않았어요. 지금 제출할까요?'))return;
+   setGrading(true);setError('');
+   try{
+     const data=await familyApi('grade_test',token,{
+       answers:quiz.questions.map(q=>({
+         round:q.exam_round,number:q.number,selected:quiz.answers[q.id]??null
+       }))
+     });
+     if(!data.finished||!Array.isArray(data.results))throw Error('채점 결과를 확인할 수 없어요.');
+     setQuiz(prev=>prev?.kind==='test'?{...prev,finished:true,result:data}:prev);
+     try{
+       const newest=await familyApi('records',token);
+       setRecords(newest.records||[]);
+     }catch{}
+   }catch(e){setError('실전시험 제출 실패: '+e.message);}
+   finally{setGrading(false);}
+ }
+ function finishPractice(){
+   if(!quiz)return;
+   if(quiz.questions.some(q=>!quiz.answers[q.id])&&!window.confirm('아직 풀지 않은 문제가 있어요. 학습을 마칠까요?'))return;
+   setQuiz(null);setError('');window.scrollTo(0,0);
  }
  function MemberCard({item}){
    const admin=item.role==='admin';
@@ -345,70 +406,160 @@ export default function FamilyDashboard(){
    </CardPaper>}
 
    {!quiz&&<CardPaper>
-      <Stack direction="row" alignItems="center" gap={1} sx={{mb:.8}}><SchoolOutlined color="primary"/><Typography variant="h6">{isAdmin?'③ 전체 혼합 학습':'전체 혼합 랜덤 학습'}</Typography></Stack>
-      <Typography color="text.secondary" fontSize={13}>업로드된 모든 회차에서 매번 새로 섞어서 출제합니다. 미풀이 문제를 우선하고 같은 세트에는 중복이 없어요.</Typography>
-      <Grid container spacing={1.6} sx={{mt:1.6,mb:2.3}}>
-        <Grid size={{xs:6,sm:4}}><Paper sx={{p:2,bgcolor:'#f3f6fb',textAlign:'center'}} elevation={0}><Typography variant="h5" fontWeight={850}>{pool.total}</Typography><Typography fontSize={12} color="text.secondary">전체 등록 문제</Typography></Paper></Grid>
-        <Grid size={{xs:6,sm:4}}><Paper sx={{p:2,bgcolor:'#f3f6fb',textAlign:'center'}} elevation={0}><Typography variant="h5" fontWeight={850}>{records.length}</Typography><Typography fontSize={12} color="text.secondary">내가 푼 문제</Typography></Paper></Grid>
-        <Grid size={{xs:12,sm:4}}><Paper sx={{p:2,bgcolor:'#f3f6fb',textAlign:'center'}} elevation={0}><Typography variant="h5" fontWeight={850}>{records.filter(x=>x.is_correct===false).length}</Typography><Typography fontSize={12} color="text.secondary">틀린 문제</Typography></Paper></Grid>
-      </Grid>
-      <Stack direction={{xs:'column',sm:'row'}} alignItems={{sm:'center'}} gap={1.5} sx={{mb:2}}>
-        <Label>학습 문제 수</Label>
-        <Select value={quizCount} size="small" onChange={e=>setQuizCount(Number(e.target.value))} sx={{minWidth:140}}>{[10,20,50].map(n=><MenuItem key={n} value={n}>{n}문항</MenuItem>)}</Select>
-      </Stack>
-      <Grid container spacing={1.2}>
-        <Grid size={{xs:12,sm:6}}><Button fullWidth variant="contained" disabled={!pool.total} onClick={()=>startQuiz('study')}>전체 혼합 · 바로 정답 확인</Button></Grid>
-        <Grid size={{xs:12,sm:6}}><Button fullWidth variant="outlined" disabled={!pool.total} onClick={()=>startQuiz('test')}>전체 혼합 · 50문항 실전</Button></Grid>
-      </Grid>
-      <Divider sx={{my:2.5}}/>
-      <Stack spacing={1.4}>
-        <Label>시대별 집중 학습</Label>
-        {availableEra.length>0?<Stack direction={{xs:'column',sm:'row'}} gap={1}>
-          <Select size="small" value={era} onChange={e=>setEra(e.target.value)} sx={{flex:1}}>
-            <MenuItem value="전체">전체 시대</MenuItem>
-            {availableEra.map(e=><MenuItem key={e} value={e}>{e}</MenuItem>)}
-          </Select>
-          <Button variant="outlined" onClick={()=>startQuiz('era')}>선택한 시대 풀기</Button>
-        </Stack>:<Alert severity="info" sx={{fontSize:13}}>시대 분류는 검증 중이에요. 검증 전에는 시대를 임의로 붙이지 않고 전체 혼합으로 이용합니다.</Alert>}
-      </Stack>
-      {!pool.total&&<Alert severity="info" sx={{mt:2}}>아직 전체 문제은행 등록이 완료되지 않았어요. {isAdmin?'위의 문제은행 등록을 먼저 진행해 주세요.':'관리자가 기출 자료를 등록하면 자동으로 이용할 수 있어요.'}</Alert>}
+     <Stack direction="row" alignItems="center" gap={1} sx={{mb:.8}}>
+       <SchoolOutlined color="primary"/><Typography variant="h6">{isAdmin?'③ 학습 모드':'내 공부방'}</Typography>
+     </Stack>
+     <Typography color="text.secondary" fontSize={13}>관리자가 올린 모든 회차를 한 문제은행으로 사용합니다. 가족별 기록은 독립적으로 저장돼요.</Typography>
+     <Grid container spacing={1.4} sx={{mt:1.4,mb:2.5}}>
+       {[[pool.total,'등록된 기출'],[records.length,'풀어본 문제'],[wrongRows.length,'복습할 오답']].map(([n,label])=>
+         <Grid key={label} size={{xs:4}}><Paper elevation={0} sx={{textAlign:'center',p:{xs:1.2,sm:2},bgcolor:'#f4f7fc'}}>
+           <Typography variant="h5" fontWeight={850}>{n}</Typography>
+           <Typography fontSize={{xs:11,sm:12}} color="text.secondary">{label}</Typography>
+         </Paper></Grid>)}
+     </Grid>
+     <Stack direction={{xs:'column',sm:'row'}} spacing={1.2} sx={{mb:2}} alignItems={{sm:'center'}}>
+       <Typography fontSize={13} fontWeight={800}>문제 수</Typography>
+       <Select size="small" value={quizCount} onChange={e=>setQuizCount(Number(e.target.value))}
+         sx={{minWidth:145}}>{[10,20,50].map(n=><MenuItem key={n} value={n}>{n}문항</MenuItem>)}</Select>
+       <Typography color="text.secondary" fontSize={12}>매번 랜덤 · 미풀이 우선</Typography>
+     </Stack>
+     <Grid container spacing={1.3}>
+       <Grid size={{xs:12,sm:6}}>
+         <Paper variant="outlined" sx={{p:2,borderRadius:2.5,height:'100%'}}>
+           <Chip label="공부 모드" size="small" color="primary"/>
+           <Typography fontWeight={800} sx={{mt:1.1}}>한 문제씩 바로 정답</Typography>
+           <Typography color="text.secondary" fontSize={12} sx={{my:1.2}}>답을 누르면 즉시 정답·오답과 정답 번호를 보여줘요.</Typography>
+           <Button variant="contained" fullWidth disabled={!pool.total} onClick={()=>startQuiz('study')}>전체 혼합 공부 시작</Button>
+         </Paper>
+       </Grid>
+       <Grid size={{xs:12,sm:6}}>
+         <Paper variant="outlined" sx={{p:2,borderRadius:2.5,height:'100%'}}>
+           <Chip label="실전 모드" size="small" color="secondary"/>
+           <Typography fontWeight={800} sx={{mt:1.1}}>50문항 · 80분 모의시험</Typography>
+           <Typography color="text.secondary" fontSize={12} sx={{my:1.2}}>시험 중 정답 비공개. 제출 후 점수·문항별 결과 확인.</Typography>
+           <Button variant="outlined" fullWidth disabled={pool.total<50} onClick={()=>startQuiz('test')}>혼합 모의시험 시작</Button>
+         </Paper>
+       </Grid>
+       <Grid size={{xs:12,sm:6}}>
+         <Paper variant="outlined" sx={{p:2,borderRadius:2.5,height:'100%'}}>
+           <Chip label="시대별" size="small"/>
+           <Typography fontWeight={800} sx={{mt:1.1}}>원하는 시대만 집중학습</Typography>
+           {availableEra.length?
+             <Stack spacing={1} sx={{mt:1.2}}>
+               <Select size="small" value={era} onChange={e=>setEra(e.target.value)}>
+                 <MenuItem value="전체">전체 시대</MenuItem>
+                 {availableEra.map(x=><MenuItem value={x} key={x}>{x}</MenuItem>)}
+               </Select>
+               <Button fullWidth variant="outlined" onClick={()=>startQuiz('era')}>시대별 문제 시작</Button>
+             </Stack>:
+             <Alert severity="info" sx={{mt:1.2,fontSize:12}}>시대 분류 검수 중 · 검증한 태그가 등록되면 이용 가능</Alert>}
+         </Paper>
+       </Grid>
+       <Grid size={{xs:12,sm:6}}>
+         <Paper variant="outlined" sx={{p:2,borderRadius:2.5,height:'100%'}}>
+           <Chip label="오답 복습" size="small" color="warning"/>
+           <Typography fontWeight={800} sx={{mt:1.1}}>틀렸던 문제만 다시 풀기</Typography>
+           <Typography fontSize={12} color="text.secondary" sx={{my:1.2}}>내 오답 {wrongRows.length}문항. 맞히면 오답 목록에서 빠져요.</Typography>
+           <Stack direction="row" gap={1}>
+             <Button variant="outlined" disabled={!wrongRows.length} onClick={()=>startQuiz('wrong')}>오답 다시 풀기</Button>
+             <Button variant="text" disabled={!wrongRows.length} onClick={()=>setReviewOpen(x=>!x)}>{reviewOpen?'목록 닫기':'오답 목록'}</Button>
+           </Stack>
+         </Paper>
+       </Grid>
+     </Grid>
+     {reviewOpen&&<Box sx={{mt:2.5}}>
+       <Divider sx={{mb:2}}/>
+       <Typography variant="h6" sx={{mb:1.5}}>내 오답노트 · {wrongRows.length}문항</Typography>
+       {!wrongRows.length?<Alert severity="success">현재 복습할 오답이 없어요.</Alert>:
+         <Stack spacing={1}>{wrongRows.map(row=>{
+           const q=pool.questions.find(x=>x.exam_round===row.exam_round&&x.number===row.question_number);
+           return <Paper key={row.exam_round+'-'+row.question_number} variant="outlined"
+             sx={{p:1.6,borderRadius:2,display:'flex',justifyContent:'space-between',alignItems:'center',gap:2}}>
+             <Box><Typography fontWeight={750} fontSize={13}>{row.exam_round}회 {row.question_number}번</Typography>
+               <Typography fontSize={12} color="text.secondary">내가 선택한 답: {row.answer_selected}번{q?.era?' · '+q.era:''}</Typography></Box>
+             <Button size="small" variant="outlined" onClick={()=>{setQuiz({kind:'wrong',questions:[q],index:0,answers:{},feedback:{},finished:false,startedAt:Date.now(),result:null});setReviewOpen(false);window.scrollTo(0,0);}}>다시 풀기</Button>
+           </Paper>;
+         })}</Stack>}
+     </Box>}
+     {!pool.total&&<Alert severity="info" sx={{mt:2}}>현재 등록된 문항이 없어요. 관리자가 문제은행을 등록하면 바로 학습할 수 있어요.</Alert>}
+     <Alert severity="info" sx={{mt:2,fontSize:12}}>전체 회차를 섞은 모의시험은 실제 단일 회차와 배점 합계가 다를 수 있어요. 공식 등급 판정이 아닌 학습용 점수로 표시합니다.</Alert>
    </CardPaper>}
 
-   {quiz&&<Grid container spacing={2}>
+   {quiz?.finished&&quiz.result&&<CardPaper>
+     <Chip label="시험 제출 완료" color="success" size="small"/>
+     <Typography variant="h5" sx={{mt:1.5}}>혼합 모의시험 결과</Typography>
+     <Typography variant="h4" color="primary.dark" sx={{mt:1.5}}>{quiz.result.score} / {quiz.result.possiblePoints}점</Typography>
+     <Typography color="text.secondary" fontSize={13} sx={{mt:.5}}>정답 {quiz.result.correctCount} / 50 · 답안 작성 {quiz.result.answered} / 50</Typography>
+     <Alert severity="info" sx={{mt:2,fontSize:12}}>서로 다른 회차의 문제와 원래 배점을 합산한 참고 점수입니다. 공식 한능검 등급과는 별개예요.</Alert>
+     <Typography variant="h6" sx={{mt:3,mb:1}}>문항별 채점 결과</Typography>
+     <Grid container spacing={1}>{quiz.result.results.map((r,i)=>
+       <Grid size={{xs:6,sm:4,md:3}} key={r.round+'-'+r.number}>
+         <Paper variant="outlined" sx={{p:1.6,borderRadius:2,borderLeft:'3px solid '+(r.correct?'#248870':'#cf645f')}}>
+           <Typography fontWeight={800} fontSize={13}>{i+1}번 · {r.correct?'정답':'오답'}</Typography>
+           <Typography color="text.secondary" fontSize={12}>{r.round}회 {r.number}번</Typography>
+           <Typography fontSize={12}>선택 {r.selected??'미응답'} / 정답 {r.correctAnswer}</Typography>
+         </Paper>
+       </Grid>)}</Grid>
+     <Stack direction="row" gap={1.3} flexWrap="wrap" sx={{mt:3}}>
+       <Button variant="contained" onClick={()=>{setQuiz(null);setReviewOpen(false);window.scrollTo(0,0);}}>학습 홈으로</Button>
+       <Button variant="outlined" onClick={()=>{setQuiz(null);setReviewOpen(true);window.scrollTo(0,0);}}>오답노트 보기</Button>
+     </Stack>
+   </CardPaper>}
+
+   {quiz&&!quiz.finished&&current&&<Grid container spacing={2}>
      <Grid size={{xs:12,md:8}}><CardPaper>
        <Stack direction="row" alignItems="center" justifyContent="space-between" gap={1}>
-         <Box><Typography variant="h6">{quiz.kind==='test'?'실전 방식 학습':'바로 정답 확인'}</Typography>
-         <Typography color="text.secondary" fontSize={12}>전체 회차 혼합 · {quiz.index+1} / {quiz.questions.length}번</Typography></Box>
-         <Button color="inherit" size="small" onClick={()=>setQuiz(null)}>학습 종료</Button>
+         <Box>
+           <Typography variant="h6">{quiz.kind==='test'?'실전 모의시험':quiz.kind==='wrong'?'오답 다시 풀기':quiz.kind==='era'?'시대별 집중학습':'바로 정답 확인'}</Typography>
+           <Typography color="text.secondary" fontSize={12}>{quiz.index+1} / {quiz.questions.length}문항 · 전체 회차 문제은행</Typography>
+         </Box>
+         <Stack direction="row" gap={.8} alignItems="center">
+           {quiz.kind==='test'&&<Chip color={remaining<300?'error':'primary'} label={'남은 '+formatTimer(remaining)}/>}
+           <Button size="small" color="inherit" onClick={()=>{if(window.confirm('학습을 종료할까요? 제출 전 시험 답안은 저장되지 않습니다.'))setQuiz(null);}}>나가기</Button>
+         </Stack>
        </Stack>
-       <LinearProgress variant="determinate" value={((quiz.index+1)/quiz.questions.length)*100} sx={{height:6,borderRadius:3,my:2}}/>
-       <Stack direction="row" justifyContent="space-between" sx={{mb:1}}><Chip size="small" label={'출처 '+current.exam_round+'회 · '+current.number+'번'}/><Chip size="small" label={current.points+'점'}/></Stack>
-       {imageBusy?<Box sx={{height:300,display:'grid',placeItems:'center'}}><CircularProgress/></Box>:image?
-         <Box sx={{mb:1,textAlign:'center'}}><Box component="img" src={image} alt="기출문제 원문" onClick={()=>setZoom(true)} sx={{maxWidth:'100%',height:'auto',border:'1px solid #dae3ef',borderRadius:2,cursor:'zoom-in'}}/>
-         <Button startIcon={<ZoomInOutlined/>} onClick={()=>setZoom(true)} size="small">원본 확대</Button></Box>:<Alert severity="warning">문제 이미지를 불러오지 못했어요.</Alert>}
-       <Typography fontWeight={800} fontSize={13} sx={{mt:1.5,mb:1}}>답안 선택</Typography>
+       <LinearProgress variant="determinate" value={(quiz.index+1)/quiz.questions.length*100} sx={{height:6,borderRadius:4,my:2}}/>
+       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{mb:1}}>
+         <Chip size="small" label={'원본 '+current.exam_round+'회 · '+current.number+'번'}/>
+         <Chip size="small" variant="outlined" label={current.points+'점'}/>
+       </Stack>
+       {imageBusy?<Box sx={{minHeight:270,display:'grid',placeItems:'center'}}><CircularProgress/></Box>:
+         image?<Box sx={{textAlign:'center',mb:1.5}}>
+           <Box component="img" src={image} alt="기출문제 원문" onClick={()=>setZoom(true)} sx={{maxWidth:'100%',height:'auto',borderRadius:2,border:'1px solid #dee5ef',cursor:'zoom-in'}}/>
+           <Button size="small" startIcon={<ZoomInOutlined/>} onClick={()=>setZoom(true)}>문제 확대</Button>
+         </Box>:<Alert severity="warning">문제 이미지를 불러오지 못했어요.</Alert>}
+       <Typography fontWeight={800} fontSize={13} sx={{my:1.2}}>답안 선택</Typography>
        <Box sx={{display:'grid',gridTemplateColumns:'repeat(5,minmax(0,1fr))',gap:1}}>
-         {[1,2,3,4,5].map(n=><Button key={n} variant={quiz.answers[current.id]===n?'contained':'outlined'} disabled={busy||(quiz.kind!=='test'&&Boolean(quiz.answers[current.id]))}
-           sx={{minWidth:0,minHeight:52,fontSize:17,fontWeight:800}}
-           onClick={()=>pickAnswer(n)}>{['①','②','③','④','⑤'][n-1]}</Button>)}
+         {[1,2,3,4,5].map(n=><Button key={n} variant={quiz.answers[current.id]===n?'contained':'outlined'}
+           disabled={busy||grading||(quiz.kind!=='test'&&Boolean(quiz.answers[current.id]))}
+           sx={{minWidth:0,minHeight:50,fontSize:17,fontWeight:800}} onClick={()=>pickAnswer(n)}>
+           {['①','②','③','④','⑤'][n-1]}
+         </Button>)}
        </Box>
-       {quiz.kind!=='test'&&quiz.feedback[current.id]&&<Alert severity={quiz.feedback[current.id].correct?'success':'error'} sx={{mt:2}}>
-         {quiz.feedback[current.id].correct?'정답입니다!':'틀렸습니다.'} 정답은 {['①','②','③','④','⑤'][quiz.feedback[current.id].correctAnswer-1]}번입니다.
+       {quiz.kind!=='test'&&quiz.feedback[current.id]&&<Alert sx={{mt:2}} severity={quiz.feedback[current.id].correct?'success':'error'}>
+         {quiz.feedback[current.id].correct?'정답이에요!':'아쉬워요, 오답이에요.'} 정답은 {['①','②','③','④','⑤'][quiz.feedback[current.id].correctAnswer-1]}번입니다.
        </Alert>}
-       <Stack direction="row" justifyContent="space-between" sx={{mt:3}}>
-         <Button variant="outlined" startIcon={<ArrowBackRounded/>} disabled={quiz.index===0} onClick={()=>setQuiz(s=>({...s,index:s.index-1}))}>이전</Button>
-         {quiz.index===quiz.questions.length-1?<Button variant="contained" disabled={!quiz.answers[current.id]} onClick={()=>setQuiz(null)}>학습 마치기</Button>:
-         <Button variant="contained" endIcon={<ArrowForwardRounded/>} disabled={!quiz.answers[current.id]}
-           onClick={()=>setQuiz(s=>({...s,index:s.index+1}))}>다음</Button>}
+       <Stack direction="row" justifyContent="space-between" gap={1} sx={{mt:3}}>
+         <Button variant="outlined" startIcon={<ArrowBackRounded/>} disabled={quiz.index===0} onClick={()=>setQuiz(q=>({...q,index:q.index-1}))}>이전</Button>
+         <Stack direction="row" gap={1}>
+           {quiz.kind==='test'&&<Button color="secondary" variant="outlined" disabled={grading} onClick={()=>finishTest(false)}>시험 제출</Button>}
+           {quiz.index===quiz.questions.length-1?
+             quiz.kind==='test'?<Button variant="contained" disabled={grading} onClick={()=>finishTest(false)}>{grading?'채점 중…':'제출 및 채점'}</Button>:
+               <Button variant="contained" onClick={finishPractice}>학습 마치기</Button>:
+             <Button variant="contained" endIcon={<ArrowForwardRounded/>} disabled={quiz.kind!=='test'&&!quiz.answers[current.id]}
+               onClick={()=>setQuiz(q=>({...q,index:q.index+1}))}>다음</Button>}
+         </Stack>
        </Stack>
      </CardPaper></Grid>
      <Grid size={{xs:12,md:4}}><CardPaper sx={{position:{md:'sticky'},top:{md:88}}}>
-       <Label>답안 현황</Label>
-       <Typography fontSize={12} color="text.secondary" sx={{mt:.8,mb:2}}>{Object.keys(quiz.answers).length} / {quiz.questions.length} 선택</Typography>
+       <Typography fontWeight={800}>답안지</Typography>
+       <Typography fontSize={12} color="text.secondary" sx={{mt:.7,mb:2}}>{Object.keys(quiz.answers).length} / {quiz.questions.length} 선택됨</Typography>
        <Box sx={{display:'grid',gridTemplateColumns:'repeat(5,minmax(0,1fr))',gap:.7}}>
-         {quiz.questions.map((q,i)=><Button key={q.id} size="small" variant={quiz.index===i?'contained':'outlined'} sx={{minWidth:0,p:0}}
-           onClick={()=>setQuiz(s=>({...s,index:i}))}>{i+1}</Button>)}
+         {quiz.questions.map((q,i)=><Button key={q.id} size="small"
+           variant={i===quiz.index?'contained':'outlined'} sx={{minWidth:0,p:0,bgcolor:i!==quiz.index&&quiz.answers[q.id]?'#eff4ff':undefined}}
+           onClick={()=>setQuiz(x=>({...x,index:i}))}>{i+1}</Button>)}
        </Box>
+       {quiz.kind==='test'&&<Alert severity="info" sx={{mt:2,fontSize:12}}>시험 중 정답은 표시하지 않습니다. 모든 답안은 제출 후 한 번에 채점해요.</Alert>}
      </CardPaper></Grid>
    </Grid>}
 
