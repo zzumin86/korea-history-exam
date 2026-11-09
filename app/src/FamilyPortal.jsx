@@ -181,8 +181,11 @@ export default function FamilyPortal(){
        validate(manifest,r,entries);
        return {round:r,manifest};
      });
-     let done=0,total=packages.length*50;
-     for(const pack of packages){
+     const already=new Set((await familyApi('pool',token)).rounds||[]);
+     const remaining=packages.filter(p=>!already.has(p.round));
+     if(remaining.length===0){setZipMessage('모든 회차가 이미 등록돼 있어요.');await refreshPool();return;}
+     let done=0,total=remaining.length*50;
+     for(const pack of remaining){
        setZipMessage(pack.round+'회 업로드 권한 발급 중');
        const tickets=(await familyApi('upload_tickets',token,{round:pack.round})).tickets;
        if(tickets.length!==50)throw Error(pack.round+'회 업로드 권한이 부족합니다.');
@@ -201,7 +204,7 @@ export default function FamilyPortal(){
        await Promise.all(workers);
        await familyApi('publish_manifest',token,{round:pack.round,manifest:pack.manifest});
      }
-     setZipMessage('완료: '+packages.length+'개 회차 / '+done+'문항');
+     setZipMessage('등록 완료: 신규 '+remaining.length+'개 회차 / '+done+'문항');
      setSourceZip(null);setCatalog(null);setShowRound(false);
      await refreshPool();
    }catch(err){setError('업로드 중단: '+err.message);}
@@ -245,11 +248,11 @@ export default function FamilyPortal(){
     {m.role!=='admin'&&m.enabled&&<Button color="error" size="small" onClick={()=>revokeMember(m.id)}>링크 폐기</Button>}
    </Stack>)}
    <Divider sx={{my:2}}/>
-   <Typography variant="h6" sx={{mb:1}}>비공개 문제 ZIP 업로드</Typography>
+   <Typography variant="h6" sx={{mb:1}}>문제은행 최초 1회 등록</Typography>
    <Typography fontSize={12} color="text.secondary" sx={{mb:2}}>원본 이미지는 공개 GitHub에 올라가지 않고 비공개 Supabase Storage에 저장됩니다. 자료 이용 권한은 별도로 확인해야 합니다.</Typography>
-   <Button variant="outlined" component="label" startIcon={<UploadFileRounded/>}>회차별 또는 통합 ZIP 선택<input hidden type="file" accept=".zip,application/zip" onChange={e=>setSourceZip(e.target.files?.[0]||null)}/></Button>
+   <Button variant="outlined" component="label" startIcon={<UploadFileRounded/>}>73~80회 통합 ZIP 선택<input hidden type="file" accept=".zip,application/zip" onChange={e=>setSourceZip(e.target.files?.[0]||null)}/></Button>
    {sourceZip&&<Typography fontSize={12} sx={{mt:1}}>{sourceZip.name} ({(sourceZip.size/1048576).toFixed(1)} MB)</Typography>}
-   <Stack direction="row" gap={1} alignItems="center" sx={{mt:1.4}}><Button variant="contained" disabled={!sourceZip||zipBusy} onClick={uploadZip}>비공개 업로드</Button>{zipBusy&&<CircularProgress size={22}/>}<Typography fontSize={12}>{zipMessage}</Typography></Stack>
+   <Stack direction="row" gap={1} alignItems="center" sx={{mt:1.4}}><Button variant="contained" disabled={!sourceZip||zipBusy} onClick={uploadZip}>누락된 회차만 등록</Button>{zipBusy&&<CircularProgress size={22}/>}<Typography fontSize={12}>{zipMessage}</Typography></Stack>
   </CardContent></Card>}
   {!mode&&<Card><CardContent sx={{p:{xs:2.2,sm:3}}}>
     <Stack direction={{xs:'column',sm:'row'}} gap={2} alignItems={{sm:'center'}} justifyContent="space-between">
