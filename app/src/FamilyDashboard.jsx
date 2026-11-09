@@ -1,6 +1,7 @@
 import React,{useCallback,useEffect,useMemo,useState} from 'react';
 import {Box,Typography,Button,Paper,Card,CardContent,Stack,Grid,Chip,Alert,LinearProgress,Select,MenuItem,TextField,
-Dialog,DialogTitle,DialogContent,DialogActions,CircularProgress,Divider,IconButton,Tooltip} from '@mui/material';
+Dialog,DialogTitle,DialogContent,DialogActions,CircularProgress,Divider,IconButton,Tooltip,
+ BottomNavigation,BottomNavigationAction,Tabs,Tab} from '@mui/material';
 import CloudUploadOutlined from '@mui/icons-material/CloudUploadOutlined';
 import PeopleAltOutlined from '@mui/icons-material/PeopleAltOutlined';
 import ContentCopyOutlined from '@mui/icons-material/ContentCopyOutlined';
@@ -10,6 +11,12 @@ import AutorenewOutlined from '@mui/icons-material/AutorenewOutlined';
 import DeleteOutlineRounded from '@mui/icons-material/DeleteOutlineRounded';
 import LockOutlined from '@mui/icons-material/LockOutlined';
 import SchoolOutlined from '@mui/icons-material/SchoolOutlined';
+import HomeRounded from '@mui/icons-material/HomeRounded';
+import AutoStoriesRounded from '@mui/icons-material/AutoStoriesRounded';
+import TimerRounded from '@mui/icons-material/TimerRounded';
+import HistoryEduRounded from '@mui/icons-material/HistoryEduRounded';
+import FactCheckRounded from '@mui/icons-material/FactCheckRounded';
+import ManageAccountsRounded from '@mui/icons-material/ManageAccountsRounded';
 import AddCircleOutline from '@mui/icons-material/AddCircleOutline';
 import ArrowBackRounded from '@mui/icons-material/ArrowBackRounded';
 import ArrowForwardRounded from '@mui/icons-material/ArrowForwardRounded';
@@ -76,6 +83,7 @@ export default function FamilyDashboard(){
  const [deleting,setDeleting]=useState(false);
  const [visibleLink,setVisibleLink]=useState(null);
  const [dialogBusy,setDialogBusy]=useState(false);
+ const [activeTab,setActiveTab]=useState('home');
  const [quizCount,setQuizCount]=useState(20);
  const [era,setEra]=useState('전체');
  const [quiz,setQuiz]=useState(null);
@@ -106,6 +114,7 @@ export default function FamilyDashboard(){
        const id=await familyApi('status',token);
        if(!active)return;
        setIdentity(id);
+       setActiveTab(id.role==='admin'?'admin':'home');
        try{await refresh(id,token);}
        catch(e){if(active)setError('문제은행·가족 명부를 불러오지 못했어요. 다시 열면 재시도할 수 있습니다.');}
      }catch(e){
@@ -144,8 +153,24 @@ export default function FamilyDashboard(){
    return ()=>{active=false;};
  },[current?.id,token]);
 
+ const tabs=[
+   {id:'home',label:'홈',icon:<HomeRounded/>},
+   {id:'study',label:'바로 확인',icon:<AutoStoriesRounded/>},
+   {id:'test',label:'실전시험',icon:<TimerRounded/>},
+   {id:'era',label:'시대별',icon:<HistoryEduRounded/>},
+   {id:'wrong',label:'오답 복습',icon:<FactCheckRounded/>},
+   ...(isAdmin?[{id:'admin',label:'가족 관리',icon:<ManageAccountsRounded/>}]:[])
+ ];
+ function navigate(tab){
+   if(!tabs.some(t=>t.id===tab))return;
+   if(quiz&&!quiz.finished&&!window.confirm('진행 중인 학습을 종료하고 이동할까요?'))return;
+   setQuiz(null);
+   setActiveTab(tab);
+   setError('');
+   window.scrollTo(0,0);
+ }
  function clearCredential(){
-   localStorage.removeItem(LOCAL_KEY);setToken('');setIdentity(null);setQuiz(null);
+   localStorage.removeItem(LOCAL_KEY);setToken('');setIdentity(null);setQuiz(null);setActiveTab('home');
    setError('');setNotice('');
  }
  async function clipboard(value){
@@ -279,6 +304,7 @@ export default function FamilyDashboard(){
    const selected=picked.slice(0,Math.min(kind==='test'?50:quizCount,picked.length));
    setReviewOpen(false);
    setGrading(false);
+   setActiveTab(kind==='wrong'?'wrong':kind==='era'?'era':kind==='test'?'test':'study');
    setQuiz({kind,questions:selected,index:0,answers:{},feedback:{},finished:false,
      startedAt:Date.now(),result:null});
    setClock(Date.now());setError('');window.scrollTo(0,0);
@@ -365,15 +391,21 @@ export default function FamilyDashboard(){
  return <Stack spacing={2.5}>
    <Box sx={{pb:.5}}>
      <Stack direction={{xs:'column',sm:'row'}} gap={1} alignItems={{sm:'center'}} justifyContent="space-between">
-       <Box><Typography variant="h4" sx={{fontSize:{xs:24,md:29}}}>{isAdmin?'가족 공부방 관리':'한국사 문제풀이'}</Typography>
+       <Box><Typography variant="h4" sx={{fontSize:{xs:24,md:29}}}>{activeTab==='admin'&&isAdmin?'가족 공부방 관리':'한국사 공부방'}</Typography>
        <Typography color="text.secondary" sx={{fontSize:13,mt:.7}}>{identity.nickname} 님 · 전용 링크 접속 중</Typography></Box>
        <Button size="small" onClick={clearCredential} color="inherit">이 기기 연결 해제</Button>
      </Stack>
    </Box>
+   <Paper variant="outlined" sx={{display:{xs:'none',md:'block'},borderRadius:2.5,overflow:'hidden'}}>
+     <Tabs variant="scrollable" scrollButtons="auto" value={activeTab} onChange={(_,v)=>navigate(v)}>
+       {tabs.map(t=><Tab key={t.id} value={t.id} label={t.label} icon={t.icon} iconPosition="start"
+         sx={{minHeight:54,textTransform:'none',fontSize:13,fontWeight:800}}/>)}
+     </Tabs>
+   </Paper>
    {error&&<Alert severity="warning" onClose={()=>setError('')}>{error}</Alert>}
    {notice&&<Alert severity="success" onClose={()=>setNotice('')}>{notice}</Alert>}
 
-   {isAdmin&&!quiz&&<CardPaper>
+   {isAdmin&&!quiz&&activeTab==='admin'&&<CardPaper>
      <Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" alignItems={{sm:'center'}} gap={1}>
        <Box><Stack direction="row" alignItems="center" gap={1}><CloudUploadOutlined color="primary"/><Typography variant="h6">① 문제은행 전체 등록</Typography></Stack>
        <Typography fontSize={13} color="text.secondary" sx={{mt:.9}}>73~80회 자료를 하나로 등록하면, 가족은 회차를 고르지 않고 전체 문제에서 랜덤으로 풀어요.</Typography></Box>
@@ -388,7 +420,7 @@ export default function FamilyDashboard(){
      {uploading&&<Stack direction="row" alignItems="center" gap={1.4} sx={{mt:2}}><CircularProgress size={19}/><Typography fontSize={12}>{uploadState}</Typography></Stack>}
    </CardPaper>}
 
-   {isAdmin&&!quiz&&<CardPaper>
+   {isAdmin&&!quiz&&activeTab==='admin'&&<CardPaper>
       <Stack direction="row" alignItems="center" gap={1} sx={{mb:1}}><PeopleAltOutlined color="primary"/><Typography variant="h6">② 가족 명부</Typography><Chip label={activeMembers.length+'명 사용 중'} size="small"/></Stack>
       <Typography fontSize={13} color="text.secondary" sx={{mb:2.5}}>가족 카드를 만든 뒤 링크를 복사하거나 공유해 주세요. 잃어버리면 같은 카드에서 재발급하면 됩니다.</Typography>
       <Stack direction={{xs:'column',sm:'row'}} gap={1} sx={{mb:2.5}}>
@@ -405,7 +437,7 @@ export default function FamilyDashboard(){
       </Box>}
    </CardPaper>}
 
-   {!quiz&&<CardPaper>
+   {!quiz&&activeTab==='home'&&<CardPaper>
      <Stack direction="row" alignItems="center" gap={1} sx={{mb:.8}}>
        <SchoolOutlined color="primary"/><Typography variant="h6">{isAdmin?'③ 학습 모드':'내 공부방'}</Typography>
      </Stack>
@@ -483,6 +515,82 @@ export default function FamilyDashboard(){
      </Box>}
      {!pool.total&&<Alert severity="info" sx={{mt:2}}>현재 등록된 문항이 없어요. 관리자가 문제은행을 등록하면 바로 학습할 수 있어요.</Alert>}
      <Alert severity="info" sx={{mt:2,fontSize:12}}>전체 회차를 섞은 모의시험은 실제 단일 회차와 배점 합계가 다를 수 있어요. 공식 등급 판정이 아닌 학습용 점수로 표시합니다.</Alert>
+   </CardPaper>}
+
+   {!quiz&&activeTab==='study'&&<CardPaper>
+     <Stack direction="row" alignItems="center" gap={1} sx={{mb:1.2}}>
+       <AutoStoriesRounded color="primary"/><Typography variant="h6">바로 정답 확인</Typography>
+     </Stack>
+     <Typography color="text.secondary" fontSize={13} sx={{mb:2}}>
+       73~80회 전체 문제은행에서 매번 무작위로 출제해요. 답을 고르면 즉시 정답과 오답을 확인합니다.
+     </Typography>
+     <Stack direction={{xs:'column',sm:'row'}} spacing={1.5} alignItems={{sm:'center'}} sx={{mb:2}}>
+       <Typography fontSize={13} fontWeight={800}>이번에 풀 문항 수</Typography>
+       <Select size="small" value={quizCount} onChange={e=>setQuizCount(Number(e.target.value))} sx={{minWidth:130}}>
+         {[10,20,50].map(n=><MenuItem value={n} key={n}>{n}문항</MenuItem>)}
+       </Select>
+     </Stack>
+     <Button variant="contained" disabled={!pool.total} onClick={()=>startQuiz('study')}>랜덤 문제 풀기</Button>
+   </CardPaper>}
+   {!quiz&&activeTab==='test'&&<CardPaper>
+     <Stack direction="row" alignItems="center" gap={1} sx={{mb:1.2}}>
+       <TimerRounded color="primary"/><Typography variant="h6">실전 모의시험</Typography>
+     </Stack>
+     <Typography color="text.secondary" fontSize={13} sx={{mb:2}}>
+       전체 회차에서 50문항 랜덤 출제 · 제한시간 80분 · 문제를 푸는 동안 정답은 공개되지 않아요.
+       제출하면 서버 채점 결과와 오답을 확인할 수 있어요.
+     </Typography>
+     <Alert severity="info" sx={{mb:2,fontSize:12}}>
+       여러 회차의 원래 배점을 섞은 학습용 시험이므로 총점 및 등급은 공식 한능검 결과와 달라질 수 있어요.
+     </Alert>
+     <Button variant="contained" disabled={pool.total<50} onClick={()=>startQuiz('test')}>50문항 시험 시작</Button>
+   </CardPaper>}
+   {!quiz&&activeTab==='era'&&<CardPaper>
+     <Stack direction="row" alignItems="center" gap={1} sx={{mb:1.2}}>
+       <HistoryEduRounded color="primary"/><Typography variant="h6">시대별 집중학습</Typography>
+     </Stack>
+     <Typography color="text.secondary" fontSize={13} sx={{mb:2}}>
+       여러 회차에 걸쳐 해당 시대에 속하는 문제만 모아 랜덤으로 풀어요. 시대는 검증된 태그만 사용합니다.
+     </Typography>
+     {availableEra.length>0?<Stack spacing={1.5}>
+       <Select size="small" value={era} onChange={e=>setEra(e.target.value)} sx={{maxWidth:320}}>
+         <MenuItem value="전체">전체 시대</MenuItem>
+         {availableEra.map(e=><MenuItem value={e} key={e}>{e}</MenuItem>)}
+       </Select>
+       <Select size="small" value={quizCount} onChange={e=>setQuizCount(Number(e.target.value))} sx={{maxWidth:160}}>
+         {[10,20,50].map(n=><MenuItem value={n} key={n}>{n}문항</MenuItem>)}
+       </Select>
+       <Box><Button variant="contained" onClick={()=>startQuiz('era')}>선택한 시대 공부 시작</Button></Box>
+     </Stack>:<Alert severity="info">문항별 시대 분류 검수가 아직 완료되지 않아 선택 가능한 시대가 없습니다. 검증된 태그를 등록한 후 활성화할게요.</Alert>}
+   </CardPaper>}
+   {!quiz&&activeTab==='wrong'&&<CardPaper>
+     <Stack direction="row" alignItems="center" gap={1} sx={{mb:1.2}}>
+       <FactCheckRounded color="primary"/><Typography variant="h6">내 오답 복습</Typography>
+     </Stack>
+     <Typography color="text.secondary" fontSize={13} sx={{mb:2}}>
+       내 전용 링크에 저장된 오답 {wrongRows.length}문항. 다시 풀어서 맞히면 목록에서 빠집니다.
+     </Typography>
+     <Stack direction="row" flexWrap="wrap" gap={1} sx={{mb:2}}>
+       <Button variant="contained" disabled={!wrongRows.length} onClick={()=>startQuiz('wrong')}>오답 랜덤 다시 풀기</Button>
+       <Button variant="outlined" disabled={!wrongRows.length} onClick={()=>setReviewOpen(v=>!v)}>
+         {reviewOpen?'오답 목록 접기':'오답 목록 보기'}
+       </Button>
+     </Stack>
+     {wrongRows.length===0?<Alert severity="success">현재 복습할 오답이 없어요. 공부 모드에서 문제를 풀어보세요.</Alert>:
+       reviewOpen&&<Stack spacing={1}>{wrongRows.map(row=>{
+         const q=pool.questions.find(p=>p.exam_round===row.exam_round&&p.number===row.question_number);
+         if(!q)return null;
+         return <Paper key={q.id} variant="outlined" sx={{p:1.5,borderRadius:2}}>
+           <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
+             <Box><Typography fontWeight={800} fontSize={13}>{q.exam_round}회 · {q.number}번</Typography>
+               <Typography color="text.secondary" fontSize={12}>내가 선택한 답 {row.answer_selected}번{q.era?' · '+q.era:''}</Typography></Box>
+             <Button size="small" variant="outlined" onClick={()=>{
+               setQuiz({kind:'wrong',questions:[q],index:0,answers:{},feedback:{},finished:false,startedAt:Date.now(),result:null});
+               setReviewOpen(false);window.scrollTo(0,0);
+             }}>다시 풀기</Button>
+           </Stack>
+         </Paper>;
+       })}</Stack>}
    </CardPaper>}
 
    {quiz?.finished&&quiz.result&&<CardPaper>
@@ -594,5 +702,14 @@ export default function FamilyDashboard(){
       <DialogContent sx={{overflow:'auto'}}>{image&&<Box component="img" src={image} alt="확대한 기출문제" sx={{width:{xs:'150%',sm:'100%'},maxWidth:'none'}}/>}</DialogContent>
       <DialogActions><Button onClick={()=>setZoom(false)}>닫기</Button></DialogActions>
    </Dialog>
+   <Paper elevation={7} sx={{display:{xs:'block',md:'none'},position:'fixed',zIndex:1200,bottom:0,left:0,right:0,
+     borderTop:'1px solid #e0e7f1',pb:'env(safe-area-inset-bottom)',bgcolor:'background.paper'}}>
+     <BottomNavigation showLabels value={activeTab} onChange={(_,value)=>navigate(value)} sx={{height:64,px:.5}}>
+       {tabs.map(t=><BottomNavigationAction key={t.id} value={t.id} label={t.label} icon={t.icon}
+         sx={{minWidth:0,px:0,py:.6,'& .MuiBottomNavigationAction-label':{fontSize:'9px!important',
+           lineHeight:1.2,whiteSpace:'nowrap'},'& .MuiSvgIcon-root':{fontSize:21}}}/>)}
+     </BottomNavigation>
+   </Paper>
+   <Box sx={{height:{xs:58,md:0}}}/>
  </Stack>;
 }
