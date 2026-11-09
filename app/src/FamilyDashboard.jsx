@@ -147,6 +147,17 @@ export default function FamilyDashboard(){
      else setError('링크 확인 실패: '+e.message);
    }finally{setDialogBusy(false);}
  }
+ async function shareMember(m){
+   setDialogBusy(true);setError('');
+   try{
+     const data=await familyApi('get_member_link',token,{memberId:m.id});
+     await share(WEB_LINK(data.token),m.nickname);
+   }catch(e){
+     setError(e.message==='link_reissue_required'
+       ?'이 가족은 이전 방식으로 만든 링크예요. 한 번 재발급하면 카드에서 바로 공유할 수 있어요.'
+       :'링크 공유 실패: '+e.message);
+   }finally{setDialogBusy(false);}
+ }
  async function createMember(){
    if(!nick.trim())return;
    setBusy(true);setError('');setNotice('');
@@ -252,6 +263,7 @@ export default function FamilyDashboard(){
      <Typography color="text.secondary" fontSize={12}>{admin?'전체 관리 권한':'가족 학습기록 독립 저장'}</Typography>
      <Stack direction="row" flexWrap="wrap" gap={1} sx={{mt:2}}>
        {item.enabled&&<Button variant="outlined" size="small" startIcon={<LinkOutlined/>} disabled={busy||dialogBusy} onClick={()=>showLink(item)}>링크 보기</Button>}
+       {!admin&&item.enabled&&<Button variant="outlined" size="small" startIcon={<IosShareOutlined/>} disabled={busy||dialogBusy} onClick={()=>shareMember(item)}>바로 공유</Button>}
        {!admin&&<Button variant="outlined" size="small" startIcon={<AutorenewOutlined/>} disabled={busy} onClick={()=>reissue(item)}>{item.enabled?'재발급':'링크 복구'}</Button>}
        {!admin&&item.enabled&&<Button color="error" variant="text" size="small" disabled={busy} onClick={()=>stopMember(item)}>중지</Button>}
      </Stack>
