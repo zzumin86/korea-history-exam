@@ -25,6 +25,7 @@ import HighlightOffOutlined from '@mui/icons-material/HighlightOffOutlined';
 import CheckCircleOutline from '@mui/icons-material/CheckCircleOutline';
 import {unzipSync} from 'fflate';
 import {familyApi,supabase,KHE_BUCKET} from './kheSupabase';
+import {makeBalancedExam} from './examSampling';
 
 const LOCAL_KEY='khe-private-link-v1';
 const DEFAULT_POOL={rounds:[],total:0,questions:[]};
@@ -326,13 +327,23 @@ export default function FamilyDashboard(){
    const wrongKeys=new Set(wrongRows.map(r=>r.exam_round+'-'+String(r.question_number).padStart(2,'0')));
    const candidates=pool.questions.filter(q=>kind==='wrong'?wrongKeys.has(q.id):
      kind==='era'?(era==='전체'||q.era===era):true);
-   if(kind==='test'&&candidates.length<50){setError('실전시험을 보려면 50문항 이상 등록되어야 합니다.');return;}
    if(!candidates.length){setError(kind==='wrong'?'복습할 오답이 없습니다.':'선택한 조건에 사용 가능한 문제가 없습니다.');return;}
-   const done=new Set(records.map(r=>r.exam_round+'-'+String(r.question_number).padStart(2,'0')));
-   const fresh=shuffled(candidates.filter(q=>!done.has(q.id)));
-   const reviewed=shuffled(candidates.filter(q=>done.has(q.id)));
-   const picked=kind==='wrong'?shuffled(candidates):[...fresh,...reviewed];
-   const selected=picked.slice(0,Math.min(kind==='test'?50:quizCount,picked.length));
+   let selected;
+   if(kind==='test'){
+     const result=makeBalancedExam(candidates,records,shuffled);
+     if(result.shortages.length){
+       setError('실전시험 출제에 필요한 시대별 문제가 부족합니다: '+
+         result.shortages.map(x=>x.era+' '+x.available+'/'+x.required+'문항').join(', '));
+       return;
+     }
+     selected=result.questions;
+   }else{
+     const done=new Set(records.map(r=>r.exam_round+'-'+String(r.question_number).padStart(2,'0')));
+     const fresh=shuffled(candidates.filter(q=>!done.has(q.id)));
+     const reviewed=shuffled(candidates.filter(q=>done.has(q.id)));
+     const picked=kind==='wrong'?shuffled(candidates):[...fresh,...reviewed];
+     selected=picked.slice(0,Math.min(quizCount,picked.length));
+   }
    setReviewOpen(false);
    setGrading(false);
    setActiveTab(kind==='wrong'?'wrong':kind==='era'?'era':kind==='test'?'test':'study');
@@ -568,7 +579,7 @@ export default function FamilyDashboard(){
        <TimerRounded color="primary"/><Typography variant="h6">실전 모의시험</Typography>
      </Stack>
      <Typography color="text.secondary" fontSize={13} sx={{mb:2}}>
-       전체 회차에서 50문항 랜덤 출제 · 제한시간 80분 · 문제를 푸는 동안 정답은 공개되지 않아요.
+       전체 63~80회에서 시대별 출제 비율을 반영한 50문항을 무작위 출제해요. 제한시간은 80분이며 풀이 중 정답은 공개되지 않아요.
        제출하면 서버 채점 결과와 오답을 확인할 수 있어요.
      </Typography>
      <Alert severity="info" sx={{mb:2,fontSize:12}}>
