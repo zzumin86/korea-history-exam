@@ -60,7 +60,8 @@ function checkBundle(m,round,entries){
  let total=0;const used=new Set();
  for(const q of m.questions){
    if(!Number.isInteger(q.number)||q.number<1||q.number>50||used.has(q.number))throw Error(round+'회 문제번호 중복·누락');
-   if(!Number.isInteger(q.answer)||q.answer<1||q.answer>5||!Number.isInteger(q.points)||q.points<1||q.points>3)throw Error(round+'회 정답·배점 오류');
+   const allCorrect=round===63&&q.number===42&&q.answer===null&&q.all_correct===true;
+   if((!allCorrect&&(!Number.isInteger(q.answer)||q.answer<1||q.answer>5))||!Number.isInteger(q.points)||q.points<1||q.points>3)throw Error(round+'회 정답·배점 오류');
    const expected='round'+round+'/images/q'+String(q.number).padStart(2,'0')+'.webp';
    if(q.image!==expected||!entries[expected]?.length)throw Error(round+'회 '+q.number+'번 이미지 누락');
    used.add(q.number);total+=q.points;
@@ -284,8 +285,8 @@ export default function FamilyDashboard(){
    setUploading(true);setError('');setNotice('');setUploadState('파일 구조 검사 중');
    try{
      const entries=unzipSync(new Uint8Array(await file.arrayBuffer()));
-     const names=Object.keys(entries).filter(n=>/^round(7[3-9]|80)\/manifest\.json$/.test(n)).sort();
-     if(!names.length)throw Error('73~80회 통합 ZIP 형식이 아닙니다.');
+     const names=Object.keys(entries).filter(n=>/^round(6[3-9]|7[0-9]|80)\/manifest\.json$/.test(n)).sort();
+     if(!names.length)throw Error('63~80회 통합 ZIP 형식이 아닙니다.');
      const bundles=names.map(name=>{
        const round=Number(name.match(/^round(\d+)\//)[1]);
        const manifest=JSON.parse(new TextDecoder().decode(entries[name]));
@@ -438,11 +439,11 @@ export default function FamilyDashboard(){
    {isAdmin&&!quiz&&activeTab==='admin'&&<CardPaper>
      <Stack direction={{xs:'column',sm:'row'}} justifyContent="space-between" alignItems={{sm:'center'}} gap={1}>
        <Box><Stack direction="row" alignItems="center" gap={1}><CloudUploadOutlined color="primary"/><Typography variant="h6">① 문제은행 전체 등록</Typography></Stack>
-       <Typography fontSize={13} color="text.secondary" sx={{mt:.9}}>73~80회 자료를 하나로 등록하면, 가족은 회차를 고르지 않고 전체 문제에서 랜덤으로 풀어요.</Typography></Box>
-       <Chip color={pool.total===400?'success':'primary'} label={pool.total+' / 400문항'}/>
+       <Typography fontSize={13} color="text.secondary" sx={{mt:.9}}>기존 73~80회는 그대로 두고 63~72회만 추가할 수 있어요. 학습은 모든 회차를 혼합해 랜덤으로 출제합니다.</Typography></Box>
+       <Chip color={pool.total===900?'success':'primary'} label={pool.total+' / 900문항'}/>
      </Stack>
-     <LinearProgress variant="determinate" value={Math.min(100,pool.total/400*100)} sx={{height:7,borderRadius:5,mt:2.2,mb:2.4}}/>
-     {pool.total===400?<Alert severity="success">문제은행 400문항 등록 완료. 가족에게 링크를 전달하면 바로 학습할 수 있어요.</Alert>:<Stack direction={{xs:'column',sm:'row'}} gap={1.4} alignItems={{sm:'center'}}>
+     <LinearProgress variant="determinate" value={Math.min(100,pool.total/900*100)} sx={{height:7,borderRadius:5,mt:2.2,mb:2.4}}/>
+     {pool.total===900?<Alert severity="success">문제은행 900문항 등록 완료. 가족별 링크로 바로 학습할 수 있어요.</Alert>:<Stack direction={{xs:'column',sm:'row'}} gap={1.4} alignItems={{sm:'center'}}>
        <Button component="label" variant="outlined" disabled={uploading} startIcon={<CloudUploadOutlined/>}>전체 문제 ZIP 선택<input hidden type="file" accept=".zip,application/zip" onChange={e=>setFile(e.target.files?.[0]||null)}/></Button>
        <Button variant="contained" disabled={!file||uploading} onClick={uploadAll}>전체 등록 시작</Button>
        <Typography fontSize={12} color="text.secondary">{file?file.name:'최초 한 번만 등록 · 등록된 문항은 자동 건너뛰기'}</Typography>
@@ -635,7 +636,7 @@ export default function FamilyDashboard(){
          <Paper variant="outlined" sx={{p:1.6,borderRadius:2,borderLeft:'3px solid '+(r.correct?'#248870':'#cf645f')}}>
            <Typography fontWeight={800} fontSize={13}>{i+1}번 · {r.correct?'정답':'오답'}</Typography>
            <Typography color="text.secondary" fontSize={12}>{r.round}회 {r.number}번</Typography>
-           <Typography fontSize={12}>선택 {r.selected??'미응답'} / 정답 {r.correctAnswer}</Typography>
+           <Typography fontSize={12}>선택 {r.selected??'미응답'} / {r.allCorrect?'전원 정답 처리':`정답 ${r.correctAnswer}`}</Typography>
          </Paper>
        </Grid>)}</Grid>
      <Stack direction="row" gap={1.3} flexWrap="wrap" sx={{mt:3}}>
@@ -675,7 +676,7 @@ export default function FamilyDashboard(){
          </Button>)}
        </Box>
        {quiz.kind!=='test'&&quiz.feedback[current.id]&&<Alert sx={{mt:2}} severity={quiz.feedback[current.id].correct?'success':'error'}>
-         {quiz.feedback[current.id].correct?'정답이에요!':'아쉬워요, 오답이에요.'} 정답은 {['①','②','③','④','⑤'][quiz.feedback[current.id].correctAnswer-1]}번입니다.
+         {quiz.feedback[current.id].correct?'정답이에요!':'아쉬워요, 오답이에요.'} 정답은 {quiz.feedback[current.id].allCorrect?'정답이 없는 정정 문항으로, 응시자 전원 정답 처리됩니다.':`정답은 ${['①','②','③','④','⑤'][quiz.feedback[current.id].correctAnswer-1]}번입니다.`}
        </Alert>}
        <Stack direction="row" justifyContent="space-between" gap={1} sx={{mt:3}}>
          <Button variant="outlined" startIcon={<ArrowBackRounded/>} disabled={quiz.index===0} onClick={()=>setQuiz(q=>({...q,index:q.index-1}))}>이전</Button>
